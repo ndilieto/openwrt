@@ -1,0 +1,101 @@
+diff --git a/arch/mips/lantiq/xway/timer.c b/arch/mips/lantiq/xway/timer.c
+index 0db0e45..6dfa589 100644
+--- a/arch/mips/lantiq/xway/timer.c
++++ b/arch/mips/lantiq/xway/timer.c
+@@ -783,11 +783,8 @@
+ 	return 0;
+ }
+ 
+-int __init lq_gptu_init(void)
++int __init lq_gptu_arch_init(void)
+ {
+-	int ret;
+-	unsigned int i;
+-
+ 	ltq_w32(0, LQ_GPTU_IRNEN);
+ 	ltq_w32(0xfff, LQ_GPTU_IRNCR);
+ 
+@@ -801,6 +798,13 @@
+ 		timer_dev.number_of_timers = MAX_NUM_OF_32BIT_TIMER_BLOCKS * 2;
+ 	printk(KERN_INFO "gptu: totally %d 16-bit timers/counters\n", timer_dev.number_of_timers);
+ 
++	return 0;
++}
++
++int __init lq_gptu_init(void) {
++	int ret;
++	unsigned int i;
++
+ 	ret = misc_register(&gptu_miscdev);
+ 	if (ret) {
+ 		printk(KERN_ERR "gptu: can't misc_register, get error %d\n", -ret);
+@@ -840,6 +844,7 @@
+ 	misc_deregister(&gptu_miscdev);
+ }
+ 
++arch_initcall(lq_gptu_arch_init);
+ module_init(lq_gptu_init);
+ module_exit(lq_gptu_exit);
+ 
+diff --git a/drivers/gpio/gpio-stp-xway.c b/drivers/gpio/gpio-stp-xway.c
+index 278c1de..d0cbee3 100644
+--- a/drivers/gpio/gpio-stp-xway.c
++++ b/drivers/gpio/gpio-stp-xway.c
+@@ -14,6 +14,7 @@
+ #include <linux/io.h>
+ #include <linux/clk.h>
+ #include <linux/err.h>
++#include <lantiq_timer.h>
+ 
+ /*
+  * The Serial To Parallel (STP) is found on MIPS based Lantiq socs. It is a
+@@ -41,9 +42,11 @@
+ #define XWAY_STP_4HZ		BIT(23)
+ #define XWAY_STP_8HZ		BIT(24)
+ #define XWAY_STP_10HZ		(BIT(24) | BIT(23))
+-#define XWAY_STP_SPEED_MASK	(0xf << 23)
++#define XWAY_STP_SPEED_MASK	(0x1f << 23)
+ 
+ /* clock source for automatic update */
++#define XWAY_STP_UPD_SW	        0
++#define XWAY_STP_UPD_GPT	BIT(30)
+ #define XWAY_STP_UPD_FPI	BIT(31)
+ #define XWAY_STP_UPD_MASK	(BIT(31) | BIT(30))
+ 
+@@ -71,6 +74,12 @@
+ #define xway_stp_w32_mask(m, clear, set, reg) \
+ 		xway_stp_w32(m, (xway_stp_r32(m, reg) & ~(clear)) | (set), reg)
+ 
++#ifdef CONFIG_DANUBE
++#define XWAY_STP_GPT_SRC_TIMER  TIMER2B
++#else
++#define XWAY_STP_GPT_SRC_TIMER  TIMER2A
++#endif
++
+ struct xway_stp {
+ 	struct gpio_chip gc;
+ 	void __iomem *virt;
+@@ -195,9 +204,20 @@ static void xway_stp_hw_init(struct xway_stp *chip)
+ 	 * if we have pins that are driven by hw, we need to tell the stp what
+ 	 * clock to use as a timer.
+ 	 */
+-	if (chip->reserved)
++	if (chip->reserved) {
+-		xway_stp_w32_mask(chip->virt, XWAY_STP_UPD_MASK,
+-			XWAY_STP_UPD_FPI, XWAY_STP_CON1);
++		unsigned int freq = 1000 * 100 * chip->gc.ngpio;
++		if (lq_set_timer(XWAY_STP_GPT_SRC_TIMER, freq, 1, 0, 0, 0, 0) < 0 ||
++			lq_start_timer(XWAY_STP_GPT_SRC_TIMER, 0) < 0) {
++			dev_warn(chip->gc.parent, "GPT setup failed, "
++					"falling back to FPI\n");
++			xway_stp_w32_mask(chip->virt, XWAY_STP_UPD_MASK,
++					XWAY_STP_UPD_FPI, XWAY_STP_CON1);
++			xway_stp_w32_mask(chip->virt, XWAY_STP_SPEED_MASK,
++					XWAY_STP_10HZ, XWAY_STP_CON1);
++		} else
++			xway_stp_w32_mask(chip->virt, XWAY_STP_UPD_MASK,
++					XWAY_STP_UPD_GPT, XWAY_STP_CON1);
++	}
+ }
+ 
+ static int xway_stp_probe(struct platform_device *pdev)

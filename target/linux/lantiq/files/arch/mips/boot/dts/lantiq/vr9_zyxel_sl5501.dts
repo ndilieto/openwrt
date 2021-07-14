@@ -1,0 +1,313 @@
+#include "vr9.dtsi"
+
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/mips/lantiq_rcu_gphy.h>
+
+/ {
+	compatible = "zyxel,sl5501", "lantiq,xway", "lantiq,vr9";
+	model = "Speedlink SL5501";
+
+	chosen {
+		bootargs = "console=ttyLTQ0,115200 mem=116M phym=128M vpe1_load_addr=0x87e00000 vpe1_mem=2M maxvpes=1 maxtcs=1 nosmp";
+	};
+
+	aliases {
+		led-boot = &power_red;
+		led-failsafe = &power_green;
+		led-running = &power_green;
+		led-upgrade = &power_green;
+		led-dsl = &dsl_green;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x8000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys-polled";
+		poll-interval = <100>;
+
+		reset {
+			label = "reset";
+			gpios = <&gpio 47 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+		};
+		rfkill {
+			label = "rfkill";
+			gpios = <&gpio 45 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RFKILL>;
+		};
+		wps {
+			label = "wps";
+			gpios = <&gpio 46 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		power_green: power_green {
+			label = "green:power";
+			gpios = <&gpio 3 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		power_red: power_red {
+			label = "red:power";
+			gpios = <&gpio 19 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+		info_green: info_green {
+			label = "green:info";
+			gpios = <&gpio 20 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		info_red: info_red {
+			label = "red:info";
+			gpios = <&gpio 21 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		internet_green: internet_green {
+			label = "green:internet";
+			gpios = <&gpio 27 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		internet_red: internet_red {
+			label = "red:internet";
+			gpios = <&gpio 28 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		wlan_green: wlan_green {
+			label = "green:wlan";
+			gpios = <&gpio 29 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		wps_green: wps {
+			label = "green:wps";
+			gpios = <&gpio 30 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+		phone_red: phone_red {
+			label = "red:phone";
+			gpios = <&stp 4 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		phone_green: phone_green {
+			label = "green:phone";
+			gpios = <&stp 7 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		dsl_green: dsl_green {
+			label = "green:dsl";
+			gpios = <&stp 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+	};
+
+	gpio_export {
+		compatible = "gpio-export";
+		#size-cells = <0>;
+
+		out_37 {
+			gpio-export,name = "wlan-pwr";
+			gpio-export,output = <1>;
+			gpios = <&gpio 37 GPIO_ACTIVE_HIGH>;
+		};
+		out_15 {
+			gpio-export,name = "wlan-rst";
+			gpio-export,output = <1>;
+			gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	usb_vbus0: regulator-usb-vbus0 {
+		compatible = "regulator-fixed";
+
+		regulator-name = "USB_VBUS0";
+
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		gpio = <&gpio 41 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	usb_vbus1: regulator-usb-vbus1 {
+		compatible = "regulator-fixed";
+
+		regulator-name = "USB_VBUS1";
+
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		gpio = <&gpio 33 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+};
+
+&eth0 {
+	pinctrl-0 = <&mdio_pins>,
+		    <&gphy0_led1_pins>, <&gphy0_led2_pins>,
+		    <&gphy1_led1_pins>, <&gphy1_led2_pins>;
+	pinctrl-names = "default";
+
+	interface@0 {
+		compatible = "lantiq,xrx200-pdi";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0>;
+		lantiq,switch;
+
+		ethernet@0 { /* WAN 1000 */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <0>;
+			phy-mode = "rgmii";
+			phy-handle = <&phy0>;
+		};
+		ethernet@1 { /* LAN4 1000 */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <1>;
+			phy-mode = "rgmii";
+			phy-handle = <&phy1>;
+		};
+		ethernet@2 { /* LAN1 100 */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <2>;
+			phy-mode = "mii";
+			phy-handle = <&phy11>;
+		};
+		ethernet@3 { /* LAN2 100 */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <3>;
+			phy-mode = "mii";
+			phy-handle = <&phy12>;
+		};
+		ethernet@4 { /* LAN3 1000 */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <4>;
+			phy-mode = "gmii";
+			phy-handle = <&phy13>;
+		};
+		ethernet@5 { /* WLAN SoC */
+			compatible = "lantiq,xrx200-pdi-port";
+			reg = <5>;
+			phy-mode = "rgmii";
+			tx-delay = /bits/ 8 <3>;
+			fixed-link {
+				speed = <1000>;
+				full-duplex;
+			};
+		};
+	};
+
+	mdio {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "lantiq,xrx200-mdio";
+
+		phy0: ethernet-phy@0 {
+			reg = <0x0>;
+			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
+			lantiq,led0h = <0x70>;
+			lantiq,led0l = <0x03>;
+		};
+		phy1: ethernet-phy@1 {
+			reg = <0x1>;
+			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
+			lantiq,led0h = <0x70>;
+			lantiq,led0l = <0x03>;
+		};
+		phy11: ethernet-phy@11 {
+			reg = <0x11>;
+			compatible = "lantiq,phy22f", "ethernet-phy-ieee802.3-c22";
+			lantiq,led0h = <0x30>;
+			lantiq,led0l = <0x03>;
+			lantiq,led1h = <0x30>;
+			lantiq,led1l = <0x03>;
+		};
+		phy12: ethernet-phy@12 {
+			reg = <0x12>;
+			compatible = "lantiq,phy22f", "ethernet-phy-ieee802.3-c22";
+		};
+		phy13: ethernet-phy@13 {
+			reg = <0x13>;
+			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
+			lantiq,led0h = <0x70>;
+			lantiq,led0l = <0x03>;
+		};
+	};
+};
+
+&gphy0 { /* LAN1-2 100 */
+	lantiq,gphy-mode = <GPHY_MODE_FE>;
+};
+
+&gphy1 { /* LAN3 1000 */
+	lantiq,gphy-mode = <GPHY_MODE_GE>;
+};
+
+&spi {
+	status = "okay";
+
+	flash@4 {
+		compatible = "jedec,spi-nor";
+		reg = <4>;
+		spi-max-frequency = <25000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			uboot {
+				label = "u-boot";
+				reg = <0x0000000 0x0080000>;
+				read-only;
+			};
+
+			uboot-env {
+				label = "u-boot-env";
+				reg = <0x0080000 0x0040000>;
+			};
+
+			firmware {
+				label = "firmware";
+				reg = <0x00c0000 0x3f40000>;
+			};
+		};
+	};
+};
+
+&stp {
+	status = "okay";
+
+	lantiq,shadow = <0x0>;
+	lantiq,groups = <0x1>;
+	lantiq,dsl = <0x0>;
+	lantiq,phy1 = <0x3>;
+	lantiq,phy2 = <0x3>;
+};
+
+&usb_phy0 {
+	status = "okay";
+};
+
+&usb_phy1 {
+	status = "okay";
+};
+
+&usb0 {
+	status = "okay";
+	vbus-supply = <&usb_vbus0>;
+};
+
+&usb1 {
+	status = "okay";
+	vbus-supply = <&usb_vbus1>;
+};
+
+&vmmc {
+        status = "okay";
+	gpios = <&gpio 31 GPIO_ACTIVE_LOW>; // reset SLIC
+};

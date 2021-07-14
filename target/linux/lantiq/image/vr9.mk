@@ -246,3 +246,13 @@ define Device/zyxel_p-2812hnu-f3
   SUPPORTED_DEVICES += P2812HNUF3
 endef
 TARGET_DEVICES += zyxel_p-2812hnu-f3
+
+define Device/zyxel_sl5501
+  DEVICE_VENDOR := ZyXEL
+  DEVICE_MODEL := sl5501
+  BOARD_NAME := SL5501
+  DEVICE_PACKAGES := wpad-basic-openssl kmod-usb-dwc2 kmod-ltq-tapi kmod-ltq-vmmc
+  IMAGE_SIZE := 64768k
+  SUPPORTED_DEVICES += SL5501
+endef
+TARGET_DEVICES += zyxel_sl5501
