@@ -1,13 +1,19 @@
-From 909840ef844013379e5ec399c1e76c65d1a6eb1d Mon Sep 17 00:00:00 2001
+From 1203aa499843fd06eccc4ec07ed63333bca55387 Mon Sep 17 00:00:00 2001
 From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 Date: Sat, 12 Oct 2013 21:09:47 +0200
-Subject: sf: fix out-of-order calls for spi_claim_bus and spi_release_bus
+Subject: [PATCH 001/158] sf: fix out-of-order calls for spi_claim_bus and
+ spi_release_bus
 
 Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/spi/sf_ops.c | 55 +++++++++++++++++++++++++++++-------------------
+ 1 file changed, 33 insertions(+), 22 deletions(-)
 
+diff --git a/drivers/mtd/spi/sf_ops.c b/drivers/mtd/spi/sf_ops.c
+index ef91b924d7..62fa026951 100644
 --- a/drivers/mtd/spi/sf_ops.c
 +++ b/drivers/mtd/spi/sf_ops.c
-@@ -132,12 +132,6 @@ int spi_flash_write_common(struct spi_fl
+@@ -214,12 +214,6 @@ int spi_flash_write_common(struct spi_flash *flash, const u8 *cmd,
  	if (buf == NULL)
  		timeout = SPI_FLASH_PAGE_ERASE_TIMEOUT;
  
@@ -20,7 +26,7 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	ret = spi_flash_cmd_write_enable(flash);
  	if (ret < 0) {
  		debug("SF: enabling write failed\n");
-@@ -158,8 +152,6 @@ int spi_flash_write_common(struct spi_fl
+@@ -240,8 +234,6 @@ int spi_flash_write_common(struct spi_flash *flash, const u8 *cmd,
  		return ret;
  	}
  
@@ -29,7 +35,7 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	return ret;
  }
  
-@@ -175,12 +167,18 @@ int spi_flash_cmd_erase_ops(struct spi_f
+@@ -257,6 +249,12 @@ int spi_flash_cmd_erase_ops(struct spi_flash *flash, u32 offset, size_t len)
  		return -1;
  	}
  
@@ -41,15 +47,17 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 +
  	cmd[0] = flash->erase_cmd;
  	while (len) {
+ 		erase_addr = offset;
+@@ -268,7 +266,7 @@ int spi_flash_cmd_erase_ops(struct spi_flash *flash, u32 offset, size_t len)
  #ifdef CONFIG_SPI_FLASH_BAR
- 		ret = spi_flash_bank(flash, offset);
+ 		ret = spi_flash_bank(flash, erase_addr);
  		if (ret < 0)
 -			return ret;
 +			goto done;
  #endif
- 		spi_flash_addr(offset, cmd);
+ 		spi_flash_addr(erase_addr, cmd);
  
-@@ -190,13 +188,16 @@ int spi_flash_cmd_erase_ops(struct spi_f
+@@ -278,13 +276,16 @@ int spi_flash_cmd_erase_ops(struct spi_flash *flash, u32 offset, size_t len)
  		ret = spi_flash_write_common(flash, cmd, sizeof(cmd), NULL, 0);
  		if (ret < 0) {
  			debug("SF: erase failed\n");
@@ -67,8 +75,8 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	return ret;
  }
  
-@@ -208,6 +209,12 @@ int spi_flash_cmd_write_ops(struct spi_f
- 	u8 cmd[4];
+@@ -297,6 +298,12 @@ int spi_flash_cmd_write_ops(struct spi_flash *flash, u32 offset,
+ 	u8 cmd[SPI_FLASH_CMD_LEN];
  	int ret = -1;
  
 +	ret = spi_claim_bus(flash->spi);
@@ -79,17 +87,17 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 +
  	page_size = flash->page_size;
  
- 	cmd[0] = CMD_PAGE_PROGRAM;
-@@ -215,7 +222,7 @@ int spi_flash_cmd_write_ops(struct spi_f
+ 	cmd[0] = flash->write_cmd;
+@@ -310,7 +317,7 @@ int spi_flash_cmd_write_ops(struct spi_flash *flash, u32 offset,
  #ifdef CONFIG_SPI_FLASH_BAR
- 		ret = spi_flash_bank(flash, offset);
+ 		ret = spi_flash_bank(flash, write_addr);
  		if (ret < 0)
 -			return ret;
 +			goto done;
  #endif
  		byte_addr = offset % page_size;
  		chunk_len = min(len - actual, page_size - byte_addr);
-@@ -232,12 +239,15 @@ int spi_flash_cmd_write_ops(struct spi_f
+@@ -327,12 +334,15 @@ int spi_flash_cmd_write_ops(struct spi_flash *flash, u32 offset,
  					buf + actual, chunk_len);
  		if (ret < 0) {
  			debug("SF: write failed\n");
@@ -106,7 +114,7 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	return ret;
  }
  
-@@ -247,20 +257,12 @@ int spi_flash_read_common(struct spi_fla
+@@ -342,20 +352,12 @@ int spi_flash_read_common(struct spi_flash *flash, const u8 *cmd,
  	struct spi_slave *spi = flash->spi;
  	int ret;
  
@@ -127,8 +135,8 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	return ret;
  }
  
-@@ -271,6 +273,12 @@ int spi_flash_cmd_read_ops(struct spi_fl
- 	u32 remain_len, read_len;
+@@ -367,6 +369,12 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ 	int bank_sel = 0;
  	int ret = -1;
  
 +	ret = spi_claim_bus(flash->spi);
@@ -139,18 +147,18 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 +
  	/* Handle memory-mapped SPI */
  	if (flash->memory_map) {
- 		spi_xfer(flash->spi, 0, NULL, NULL, SPI_XFER_MMAP);
-@@ -289,7 +297,7 @@ int spi_flash_cmd_read_ops(struct spi_fl
- 		ret = spi_flash_cmd_bankaddr_write(flash, bank_sel);
- 		if (ret) {
- 			debug("SF: fail to set bank%d\n", bank_sel);
+ 		ret = spi_claim_bus(flash->spi);
+@@ -399,7 +407,7 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ #ifdef CONFIG_SPI_FLASH_BAR
+ 		bank_sel = spi_flash_bank(flash, read_addr);
+ 		if (bank_sel < 0)
 -			return ret;
 +			goto done;
- 		}
  #endif
- 		remain_len = (SPI_FLASH_16MB_BOUN * (bank_sel + 1)) - offset;
-@@ -304,7 +312,7 @@ int spi_flash_cmd_read_ops(struct spi_fl
- 							data, read_len);
+ 		remain_len = ((SPI_FLASH_16MB_BOUN << flash->shift) *
+ 				(bank_sel + 1)) - offset;
+@@ -413,7 +421,7 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ 		ret = spi_flash_read_common(flash, cmd, cmdsz, data, read_len);
  		if (ret < 0) {
  			debug("SF: read failed\n");
 -			break;
@@ -158,7 +166,7 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  		}
  
  		offset += read_len;
-@@ -312,6 +320,9 @@ int spi_flash_cmd_read_ops(struct spi_fl
+@@ -421,6 +429,9 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
  		data += read_len;
  	}
  
@@ -168,3 +176,6 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  	return ret;
  }
  
+-- 
+2.11.0
+

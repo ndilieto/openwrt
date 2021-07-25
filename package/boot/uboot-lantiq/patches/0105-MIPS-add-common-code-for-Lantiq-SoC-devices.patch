@@ -1,0 +1,2273 @@
+From cc828e895c6b80ee333e83bdb80a98561b69858f Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:21:56 +0100
+Subject: [PATCH 105/158] MIPS: add common code for Lantiq SoC devices
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/lantiq-common/Makefile        |  11 +
+ arch/mips/cpu/mips32/lantiq-common/cpu.c           |  67 +++
+ arch/mips/cpu/mips32/lantiq-common/lowlevel_init.S |  20 +
+ arch/mips/cpu/mips32/lantiq-common/mem.c           | 453 +++++++++++++++++++
+ arch/mips/cpu/mips32/lantiq-common/pmu.c           |   9 +
+ arch/mips/cpu/mips32/lantiq-common/spl.c           | 477 +++++++++++++++++++++
+ arch/mips/cpu/mips32/lantiq-common/start.S         | 133 ++++++
+ arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds  |  85 ++++
+ arch/mips/include/asm/lantiq/chipid.h              |  73 ++++
+ arch/mips/include/asm/lantiq/clk.h                 |  30 ++
+ arch/mips/include/asm/lantiq/config.h              | 197 +++++++++
+ arch/mips/include/asm/lantiq/cpu.h                 |  36 ++
+ arch/mips/include/asm/lantiq/dma.h                 |  94 ++++
+ arch/mips/include/asm/lantiq/eth.h                 |  38 ++
+ arch/mips/include/asm/lantiq/gpio.h                |  58 +++
+ arch/mips/include/asm/lantiq/io.h                  |  40 ++
+ arch/mips/include/asm/lantiq/mem.h                 | 139 ++++++
+ arch/mips/include/asm/lantiq/pm.h                  |  21 +
+ arch/mips/include/asm/lantiq/reset.h               |  37 ++
+ arch/mips/include/asm/lantiq/spl.h                 |  83 ++++
+ 20 files changed, 2101 insertions(+)
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/Makefile
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/cpu.c
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/lowlevel_init.S
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/mem.c
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/pmu.c
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/spl.c
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/start.S
+ create mode 100644 arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds
+ create mode 100644 arch/mips/include/asm/lantiq/chipid.h
+ create mode 100644 arch/mips/include/asm/lantiq/clk.h
+ create mode 100644 arch/mips/include/asm/lantiq/config.h
+ create mode 100644 arch/mips/include/asm/lantiq/cpu.h
+ create mode 100644 arch/mips/include/asm/lantiq/dma.h
+ create mode 100644 arch/mips/include/asm/lantiq/eth.h
+ create mode 100644 arch/mips/include/asm/lantiq/gpio.h
+ create mode 100644 arch/mips/include/asm/lantiq/io.h
+ create mode 100644 arch/mips/include/asm/lantiq/mem.h
+ create mode 100644 arch/mips/include/asm/lantiq/pm.h
+ create mode 100644 arch/mips/include/asm/lantiq/reset.h
+ create mode 100644 arch/mips/include/asm/lantiq/spl.h
+
+diff --git a/arch/mips/cpu/mips32/lantiq-common/Makefile b/arch/mips/cpu/mips32/lantiq-common/Makefile
+new file mode 100644
+index 0000000000..07588f346d
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/Makefile
+@@ -0,0 +1,11 @@
++#
++# Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-y = cpu.o pmu.o
++obj-y += lowlevel_init.o
++obj-$(CONFIG_LTQ_SPL_MC_TUNE) += mem.o
++obj-$(CONFIG_SPL_BUILD) += spl.o
++extra-$(CONFIG_SPL_BUILD) += start.o
+diff --git a/arch/mips/cpu/mips32/lantiq-common/cpu.c b/arch/mips/cpu/mips32/lantiq-common/cpu.c
+new file mode 100644
+index 0000000000..1ac19814c8
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/cpu.c
+@@ -0,0 +1,67 @@
++/*
++ * Copyright (C) 2012-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/chipid.h>
++#include <asm/lantiq/clk.h>
++#include <asm/lantiq/reset.h>
++#include <asm/lantiq/cpu.h>
++
++static const char ltq_bootsel_strings[][16] = {
++	"NOR",
++	"NOR w/o BootROM",
++	"UART",
++	"UART w/o EEPROM",
++	"SPI",
++	"NAND",
++	"PCI",
++	"MII0",
++	"RMII0",
++	"RGMII1",
++	"unknown",
++};
++
++const char *ltq_boot_select_str(void)
++{	enum ltq_boot_select bootsel = ltq_boot_select();
++
++	if (bootsel > BOOT_UNKNOWN)
++		bootsel = BOOT_UNKNOWN;
++
++	return ltq_bootsel_strings[bootsel];
++}
++
++void ltq_chip_print_info(void)
++{
++	char buf[32];
++
++	printf("SoC:   Lantiq %s v1.%u\n", ltq_chip_partnum_str(),
++		ltq_chip_version_get());
++	printf("CPU:   %s MHz\n", strmhz(buf, ltq_get_cpu_clock()));
++	printf("IO:    %s MHz\n", strmhz(buf, ltq_get_io_region_clock()));
++	printf("BUS:   %s MHz\n", strmhz(buf, ltq_get_bus_clock()));
++	printf("BOOT:  %s\n", ltq_boot_select_str());
++}
++
++int arch_cpu_init(void)
++{
++	ltq_pmu_init();
++	ltq_ebu_init();
++
++	return 0;
++}
++
++void _machine_restart(void)
++{
++	ltq_reset_activate(LTQ_RESET_HARD);
++	mdelay(200);
++	ltq_reset_deactivate(LTQ_RESET_HARD);
++	ltq_reset_activate(LTQ_RESET_CORE);
++}
++
++ulong notrace get_tbclk(void)
++{
++	return ltq_get_cpu_clock() / 2;
++}
+diff --git a/arch/mips/cpu/mips32/lantiq-common/lowlevel_init.S b/arch/mips/cpu/mips32/lantiq-common/lowlevel_init.S
+new file mode 100644
+index 0000000000..ad03b04b7f
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/lowlevel_init.S
+@@ -0,0 +1,20 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <asm/asm.h>
++#include <asm/regdef.h>
++
++NESTED(lowlevel_init, 0, ra)
++	move	t8, ra
++
++	la	t7, ltq_cgu_init
++	jalr	t7
++
++	la	t7, ltq_mem_init
++	jalr	t7
++
++	jr	t8
++	END(lowlevel_init)
+diff --git a/arch/mips/cpu/mips32/lantiq-common/mem.c b/arch/mips/cpu/mips32/lantiq-common/mem.c
+new file mode 100644
+index 0000000000..a8be36913f
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/mem.c
+@@ -0,0 +1,453 @@
++/*
++ * This file is released under the terms of GPL v2 and any later version.
++ * See the file COPYING in the root directory of the source tree for details.
++ *
++ * Copyright (C) 2014 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ */
++
++#include <common.h>
++#include <spi_flash.h>
++#include <nand.h>
++#include <asm/mipsregs.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/mem.h>
++#include <asm/lantiq/spl.h>
++
++/**
++ * Test the data bus wiring by performing a walking 1's test at
++ * the given offset.
++ */
++int ltq_mem_test_data_bus(phys_addr_t offset)
++{
++	u16 data, pattern;
++	int ret = 0;
++
++	for (pattern = 1; pattern != 0; pattern <<= 1) {
++		sdram_uc_writew(offset, pattern);
++		cpu_sync();
++
++		data = sdram_uc_readw(offset);
++		if (data != pattern) {
++			debug("MEM: data bits error: %04x (pattern %04x)\n",
++				data, pattern);
++			ret = 1;
++		}
++	}
++
++	return ret;
++}
++
++/**
++ * Test the address bus wiring by performing a walking 1's test
++ * at each power-of-two address and checking for aliasing. This
++ * test will find single-bit address failures such as
++ * stuck-high, stuck-low and shorted pins.
++ */
++int ltq_mem_test_address_bus(phys_size_t dram_size)
++{
++	const phys_addr_t addr_mask = (dram_size - 1);
++	const u8 pattern1 = 0xaa;
++	const u8 pattern2 = 0x55;
++	phys_addr_t offset, offset_test;
++	u8 data;
++	int ret = 0;
++
++	/*
++	 * Write pattern to each power-of-two offset. Each offset must be
++	 * aligned to 32 bit.
++	 */
++	for (offset = 1; (offset & addr_mask) != 0; offset <<= 1)
++		sdram_uc_writeb(offset, pattern1);
++
++	/* Check for address bits stuck high */
++	sdram_uc_writeb(0, pattern2);
++	cpu_sync();
++
++	for (offset = 1; (offset & addr_mask) != 0; offset <<= 1) {
++		data = sdram_uc_readb(offset);
++		if (data != pattern1) {
++			debug("MEM: %08x: address bits stuck high\n",
++				offset);
++			ret = 1;
++		}
++	}
++
++	/* Check for address bits stuck low or shorted */
++	sdram_uc_writeb(0, pattern1);
++	cpu_sync();
++
++	for (offset_test = 1; (offset_test & addr_mask) != 0; offset_test <<= 1) {
++		sdram_uc_writeb(offset_test, pattern2);
++		cpu_sync();
++
++		data = sdram_uc_readb(0);
++		if (data != pattern1) {
++			debug("MEM: %08x: address bits stuck low or shorted\n",
++				offset_test);
++			ret = 1;
++		}
++
++		for (offset = 1; (offset & addr_mask) != 0; offset <<= 1) {
++			data = sdram_uc_readb(offset);
++			if (data != pattern1 && offset != offset_test) {
++				debug("MEM: %08x: address bits stuck low or shorted\n",
++					offset);
++				ret = 1;
++			}
++		}
++
++		sdram_uc_writeb(offset_test, pattern1);
++		cpu_sync();
++	}
++
++	return ret;
++}
++
++/**
++ * Test SDRAM device in the given region.
++ */
++int ltq_mem_test_device(phys_addr_t addr, phys_size_t size)
++{
++	phys_addr_t offset;
++	u32 data, pattern;
++	int ret = 0;
++
++	/* Write default pattern */
++	for (pattern = 1, offset = 0; offset < size; pattern++, offset += 4)
++		sdram_uc_writel(offset, pattern);
++
++	cpu_sync();
++
++	/* Check each pattern in first pass */
++	for (pattern = 1, offset = 0; offset < size; pattern++, offset += 4) {
++		data = sdram_uc_readl(offset);
++		if (data != pattern) {
++			debug("MEM: %08x: data %08x != pattern %08x\n",
++				offset, data, pattern);
++			ret = 1;
++		}
++
++		sdram_uc_writel(offset, ~pattern);
++	}
++
++	cpu_sync();
++
++	/* Check each inverted pattern in second pass */
++	for (pattern = 1, offset = 0; offset < size; pattern++, offset += 4) {
++		data = sdram_uc_readl(offset);
++		if (data != ~pattern) {
++			debug("MEM: %08x: data %08x != pattern %08x\n",
++				offset, data, ~pattern);
++			ret = 1;
++		}
++	}
++
++	return ret;
++}
++
++static const u8 test_pattern_b[] = {
++	0x55, 0x00, 0xfe, 0x01,
++};
++
++static const u16 test_pattern_w[] = {
++	0x5555, 0xffff, 0x8000, 0x7fff,
++};
++
++static const u32 test_pattern_l[] = {
++	0x5555aaaa, 0xFFFF0000, 0x80000001, 0x7ffffffe,
++	0x12345678, 0x9ABCDEF0, 0xc3c3c3c3, 0xffffffff,
++};
++
++static unsigned long dcache_line_size(void)
++{
++	unsigned long conf1, dl;
++	conf1 = read_c0_config1();
++	dl = (conf1 & MIPS_CONF1_DL) >> MIPS_CONF1_DL_SHIFT;
++	if (!dl)
++		return 0;
++	return 2 << dl;
++}
++
++int ltq_mem_test_tune(phys_size_t sdram_size, unsigned int slice,
++				int quick)
++{
++	unsigned int j, k, l;
++	phys_addr_t offset;
++	u8 data_b, pattern_b;
++	u16 mask_w, data_w, pattern_w;
++	u32 mask_l, data_l, pattern_l;
++	const unsigned long dcache_lsize = dcache_line_size();
++
++	if (slice) {
++		mask_w = 0xff00;
++		mask_l = 0xff00ff00;
++	} else {
++		mask_w = 0x00ff;
++		mask_l = 0x00ff00ff;
++	}
++
++	for (j = 0; j < 8; j++) {
++		for (k = 0; k < 0x20; k += 4) {
++			offset = (j << 16) + k;
++			pattern_l = test_pattern_l[j];
++			sdram_uc_writel(offset, pattern_l);
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_l = ~test_pattern_l[j];
++			sdram_uc_writel(offset, pattern_l);
++		}
++	}
++
++	cpu_sync();
++
++	for (j = 0; j < 8; j++) {
++		for (k = 0; k < 0x20; k += 4) {
++			offset = (j << 16) + k;
++			pattern_l = test_pattern_l[j];
++			data_l = sdram_uc_readl(offset);
++			if ((data_l & mask_l) != (pattern_l & mask_l)) {
++				debug("MEM: %08x: data %08x != pattern %08x, mask %08x\n",
++					offset, data_l, pattern_l, mask_l);
++				return 1;
++			}
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_l = ~test_pattern_l[j];
++			data_l = sdram_uc_readl(offset);
++			if ((data_l & mask_l) != (pattern_l & mask_l)) {
++				debug("MEM: %08x: data %08x != pattern %08x, mask %08x\n",
++					offset, data_l, pattern_l, mask_l);
++				return 1;
++			}
++		}
++	}
++
++	if (quick)
++		return 0;
++
++	for (j = 0; j < 4; j++) {
++		for (k = 0; k < 0x40; k += 2) {
++			offset = (j << 16) + k;
++			pattern_w = test_pattern_w[j];
++			sdram_uc_writew(offset, pattern_w);
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_w = ~test_pattern_w[j] & 0xffff;
++			sdram_uc_writew(offset, pattern_w);
++		}
++	}
++
++	cpu_sync();
++
++	for (j = 0; j < 4; j++) {
++		for (k = 0; k < 0x40; k += 2) {
++			offset = (j << 16) + k;
++			pattern_w = test_pattern_w[j];
++			data_w = sdram_uc_readw(offset);
++			if ((data_w & mask_w) != (pattern_w & mask_w)) {
++				debug("MEM: %08x: data %04x != pattern %04x, mask %04x\n",
++					offset, data_w, pattern_w, mask_w);
++				return 1;
++			}
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_w = ~test_pattern_w[j] & 0xffff;
++			data_w = sdram_uc_readw(offset);
++			if ((data_w & mask_w) != (pattern_w & mask_w)) {
++				debug("MEM: %08x: data %04x != pattern %04x, mask %04x\n",
++					offset, data_w, pattern_w, mask_w);
++				return 1;
++			}
++		}
++	}
++
++	for (j = 0; j < 4; j++) {
++		for (k = 0; k < 0x80; k += 1) {
++			offset = (j << 16) + k + slice;
++			pattern_b = test_pattern_b[j];
++			sdram_uc_writeb(offset, pattern_b);
++
++			offset = (j << 16) + k + (sdram_size >> 1) + slice;
++			pattern_b = ~test_pattern_b[j] & 0xff;
++			sdram_uc_writeb(offset, pattern_b);
++		}
++	}
++
++	cpu_sync();
++
++	for (j = 0; j < 4; j++) {
++		for (k = 0; k < 0x80; k += 1) {
++			offset = (j << 16) + k + slice;
++			pattern_b = test_pattern_b[j];
++			data_b = sdram_uc_readb(offset);
++			if (data_b != pattern_b) {
++				debug("MEM: %08x: data %02x != pattern %02x\n",
++					offset, data_b, pattern_b);
++				return 1;
++			}
++
++			offset = (j << 16) + k + (sdram_size >> 1) + slice;
++			pattern_b = ~test_pattern_b[j] & 0xff;
++			data_b = sdram_uc_readb(offset);
++			if (data_b != pattern_b) {
++				debug("MEM: %08x: data %02x != pattern %02x\n",
++					offset, data_b, pattern_b);
++				return 1;
++			}
++		}
++	}
++
++	for (j = 0; j < 8; j++) {
++		for (k = 0; k < 0x400; k += 4) {
++			l = (j + (k >> 2) + 2) % 8;
++			offset = (j << 16) + k;
++			pattern_l = test_pattern_l[l];
++			sdram_writel(offset, pattern_l);
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_l = ~test_pattern_l[l];
++			sdram_writel(offset, pattern_l);
++
++			if ((k % dcache_lsize) == 0)
++				sdram_flush_dcache_line(j << 16, dcache_lsize);
++		}
++	}
++
++	for (j = 0; j < 8; j++) {
++		for (k = 0; k < 0x400; k += 4) {
++			l = (j + (k >> 2) + 2) % 8;
++			offset = (j << 16) + k;
++			pattern_l = test_pattern_l[l];
++			data_l = sdram_readl(offset);
++			if ((data_l & mask_l) != (pattern_l & mask_l)) {
++				debug("MEM: %08x (cached): data %08x != pattern %08x, mask %08x\n",
++					offset, data_l, pattern_l, mask_l);
++				return 1;
++			}
++
++			offset = (j << 16) + k + (sdram_size >> 1);
++			pattern_l = ~test_pattern_l[l];
++			data_l = sdram_readl(offset);
++			if ((data_l & mask_l) != (pattern_l & mask_l)) {
++				debug("MEM: %08x (cached): data %08x != pattern %08x, mask %08x\n",
++					offset, data_l, pattern_l, mask_l);
++				return 1;
++			}
++		}
++	}
++
++	return 0;
++}
++
++/* avoid usage of printf in SPL */
++static void mc_tune_print(u8 a, u8 b)
++{
++	const char digits[] = "0123456789abcdef";
++	char tmp[8];
++
++	tmp[0] = digits[a >> 4];
++	tmp[1] = digits[a & 0xf];
++	tmp[2] = '/';
++	tmp[3] = digits[b >> 4];
++	tmp[4] = digits[b & 0xf];
++	tmp[5] = '\n';
++	tmp[6]= '\0';
++
++	puts(tmp);
++}
++
++void mc_tune_dump(const struct mc_tune_cfg *cfg)
++{
++	if (spl_has_console) {
++		puts("MEM: DDR Echo DLL delay:  ");
++		mc_tune_print(cfg->gate_echo_dll_l, cfg->gate_echo_dll_u);
++		puts("MEM: DDR Write DQS delay: ");
++		mc_tune_print(cfg->write_dqs_delay_l, cfg->write_dqs_delay_u);
++		puts("MEM: DDR Read DQS delay:  ");
++		mc_tune_print(cfg->read_dqs_delay_l, cfg->read_dqs_delay_u);
++	}
++}
++
++int mc_tune_check(const struct mc_tune_cfg *cfg)
++{
++	u32 crc;
++
++	if (cfg->magic != MC_TUNE_MAGIC)
++		return -1;
++
++	crc = crc32(0, &cfg->state, sizeof(*cfg) -
++		offsetof(struct mc_tune_cfg, state));
++	if (crc != cfg->crc)
++		return -1;
++
++	return 0;
++}
++
++int mc_tune_load_ram(struct mc_tune_cfg *cfg)
++{
++	const void *addr = (const void *)CONFIG_SPL_MC_TUNE_BASE;
++
++	memcpy(cfg, addr, sizeof(*cfg));
++	return mc_tune_check(cfg);
++}
++
++void mc_tune_store_ram(struct mc_tune_cfg *cfg)
++{
++	void *addr = (void *)CONFIG_SPL_MC_TUNE_BASE;
++
++	cfg->magic = MC_TUNE_MAGIC;
++	cfg->crc = crc32(0, &cfg->state, sizeof(*cfg) -
++		offsetof(struct mc_tune_cfg, state));
++
++	memcpy(addr, cfg, sizeof(*cfg));
++}
++
++#if defined(CONFIG_LTQ_SPL_MC_TUNE)
++int mc_tune_store_flash(void)
++{
++	struct mc_tune_cfg cfg;
++	int err;
++
++	err = mc_tune_load_ram(&cfg);
++	if (err) {
++		debug("MEM:   invalid MC tune data in RAM\n");
++		return 0;
++	}
++
++	if (cfg.state == MC_TUNE_VALID_STORED) {
++		debug("MEM:   MC tune data already stored in flash\n");
++		return 0;
++	}
++
++	debug("MEM:   storing MC tune data to flash\n");
++
++	cfg.state = MC_TUNE_VALID_STORED;
++	cfg.crc = crc32(0, &cfg.state, sizeof(cfg) -
++		offsetof(struct mc_tune_cfg, state));
++
++#if spl_boot_spi_flash
++	struct spi_flash sf;
++
++	err = spl_spi_flash_probe(&sf);
++	if (err)
++		return 0;
++
++	spi_flash_write(&sf, CONFIG_SPL_MC_TUNE_OFFS,
++		sizeof(cfg), &cfg);
++#endif
++
++#if spl_boot_nand_flash
++	nand_info_t *nand = &nand_info[0];
++	size_t len = sizeof(cfg);
++
++	nand_write(nand, CONFIG_SPL_MC_TUNE_OFFS, &len, (u_char *)&cfg);
++#endif
++
++#if spl_boot_nor_flash
++	flash_write((char *)&cfg, CONFIG_SYS_FLASH_BASE +
++		CONFIG_SPL_MC_TUNE_OFFS, sizeof(cfg));
++#endif
++
++	return 0;
++}
++#endif
+diff --git a/arch/mips/cpu/mips32/lantiq-common/pmu.c b/arch/mips/cpu/mips32/lantiq-common/pmu.c
+new file mode 100644
+index 0000000000..8f0dac145a
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/pmu.c
+@@ -0,0 +1,9 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/pm.h>
++
+diff --git a/arch/mips/cpu/mips32/lantiq-common/spl.c b/arch/mips/cpu/mips32/lantiq-common/spl.c
+new file mode 100644
+index 0000000000..208ca235cf
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/spl.c
+@@ -0,0 +1,477 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <image.h>
++#include <version.h>
++#include <spi_flash.h>
++#include <nand.h>
++#include <linux/compiler.h>
++#include <lzma/LzmaDec.h>
++#include <linux/lzo.h>
++#include <asm/mipsregs.h>
++#include <asm/lantiq/spl.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/lantiq/mem.h>
++
++struct spl_image {
++	ulong entry_addr;
++	ulong data_size;
++	ulong entry_size;
++	ulong data_crc;
++	u8 comp;
++};
++
++DECLARE_GLOBAL_DATA_PTR;
++static struct spi_flash spl_spi_flash;
++
++#if spl_boot_nand_flash || spl_boot_hsnand_flash
++static u8 spl_mc_tune_buf[CONFIG_SYS_NAND_PAGE_SIZE];
++#else
++static u8 spl_mc_tune_buf[sizeof(struct mc_tune_cfg)];
++#endif
++
++static int spl_is_compressed(const struct spl_image *spl)
++{
++	if (spl->comp == IH_COMP_NONE)
++		return 0;
++
++#if defined(CONFIG_LTQ_SPL_COMP_LZO)
++	return spl->comp == IH_COMP_LZO;
++#endif
++
++	spl_puts("SPL: unsupported compression type\n");
++
++	return -1;
++}
++
++static void spl_console_init(void)
++{
++	if (!spl_has_console)
++		return;
++
++	gd->flags |= GD_FLG_RELOC;
++	gd->baudrate = CONFIG_BAUDRATE;
++
++	serial_init();
++
++	gd->have_console = 1;
++
++	spl_puts("\nU-Boot SPL " PLAIN_VERSION " (" U_BOOT_DATE " - " \
++		U_BOOT_TIME ")\n");
++}
++
++static int spl_parse_image(const image_header_t *hdr, struct spl_image *spl)
++{
++	spl_puts("SPL: checking U-Boot image\n");
++
++	if (!image_check_magic(hdr)) {
++		spl_puts("SPL: invalid magic\n");
++		return -1;
++	}
++
++        if (!image_check_hcrc(hdr)) {
++		spl_puts("SPL: invalid header CRC\n");
++		return -1;
++	}
++
++	spl->entry_addr = image_get_load(hdr);
++	spl->data_size = image_get_data_size(hdr);
++	spl->data_crc = image_get_dcrc(hdr);
++	spl->comp = image_get_comp(hdr);
++
++	spl_debug("SPL: size %lu, entry %08lx, comp %u\n",
++		spl->data_size, spl->entry_addr, spl->comp);
++
++	return 0;
++}
++
++static int spl_check_data(const struct spl_image *spl, unsigned long addr)
++{
++	ulong dcrc = crc32(0, (unsigned char *)addr, spl->data_size);
++
++	if (dcrc != spl->data_crc) {
++		spl_puts("SPL: invalid data CRC\n");
++		return 0;
++	}
++
++	return 1;
++}
++
++static int spl_copy_image(struct spl_image *spl, unsigned long addr)
++{
++	spl_puts("SPL: copying U-Boot to RAM\n");
++
++	memcpy((void *) spl->entry_addr, (const void *)addr, spl->data_size);
++	spl->entry_size = spl->data_size;
++
++	return 0;
++}
++
++static int spl_uncompress(struct spl_image *spl, unsigned long addr)
++{
++	size_t len = CONFIG_SYS_LOAD_SIZE;
++	int ret;
++
++	spl_puts("SPL: decompressing U-Boot with LZO\n");
++
++	ret = lzop_decompress(
++		(const unsigned char*)addr, spl->data_size,
++		(unsigned char *) spl->entry_addr, &len);
++
++	spl->entry_size = len;
++
++	return ret;
++}
++
++static int spl_load_spi_flash(struct spl_image *spl)
++{
++	image_header_t hdr;
++	int ret;
++	unsigned long loadaddr;
++	unsigned long addr = CONFIG_SPL_U_BOOT_OFFS;
++
++	/*
++	 * Image format:
++	 *
++	 * - 20 byte non-volatile bootstrap header
++	 * - SPL binary
++	 * - 12 byte non-volatile bootstrap header
++	 * - 64 byte U-Boot mkimage header
++	 * - U-Boot binary
++	 */
++	spl_debug("SPL: reading image header at offset %lx\n", addr);
++	ret = spi_flash_read(&spl_spi_flash, addr, sizeof(hdr), &hdr);
++	if (ret)
++		return ret;
++
++	ret = spl_parse_image(&hdr, spl);
++	if (ret)
++		return ret;
++
++	if (spl_is_compressed(spl))
++		loadaddr = CONFIG_LOADADDR;
++	else
++		loadaddr = spl->entry_addr;
++
++	spl_puts("SPL: loading U-Boot to RAM\n");
++
++	/* skip U-Boot mkimage header */
++	addr += image_get_header_size();
++	ret = spi_flash_read(&spl_spi_flash, addr, spl->data_size,
++		(void *)loadaddr);
++	if (ret)
++		return ret;
++
++	if (!spl_check_data(spl, loadaddr))
++		return -1;
++
++	if (spl_is_compressed(spl))
++		ret = spl_uncompress(spl, loadaddr);
++
++	return ret;
++}
++
++static int spl_load_nor_flash(struct spl_image *spl)
++{
++	image_header_t hdr;
++	int ret;
++	unsigned long addr = CONFIG_SPL_U_BOOT_OFFS;
++
++#if spl_boot_nor_flash
++	addr += CONFIG_SYS_FLASH_BASE;
++#endif
++
++	/*
++	 * Image format:
++	 *
++	 * - SPL binary
++	 * - TPL binary
++	 * - 64 byte U-Boot mkimage header
++	 * - U-Boot binary
++	 */
++	spl_debug("SPL: reading image header at offset %lx\n", addr);
++	memcpy(&hdr, (const void *)addr, sizeof(hdr));
++
++	ret = spl_parse_image(&hdr, spl);
++	if (ret)
++		return ret;
++
++	spl_puts("SPL: loading U-Boot to RAM\n");
++
++	/* skip U-Boot mkimage header */
++	addr += image_get_header_size();
++
++	if (spl_is_compressed(spl))
++		ret = spl_uncompress(spl, addr);
++	else
++		ret = spl_copy_image(spl, addr);
++
++	return ret;
++}
++
++static int spl_load_nand_flash(struct spl_image *spl)
++{
++	const image_header_t *hdr;
++	int ret;
++	unsigned long loadaddr = CONFIG_LOADADDR;
++
++	/*
++	 * Image format:
++	 *
++	 * - 20 byte non-volatile bootstrap header
++	 * - SPL binary
++	 * - 12 byte non-volatile bootstrap header
++	 * - padding bytes up to CONFIG_SYS_NAND_TPL_OFFS
++	 * - TPL binary
++	 * - padding bytes up to CONFIG_SYS_NAND_U_BOOT_OFFS
++	 * - 64 byte U-Boot mkimage header
++	 * - U-Boot binary
++	 */
++	spl_puts("SPL: loading U-Boot to RAM\n");
++
++	nand_spl_load_image(CONFIG_SPL_U_BOOT_OFFS,
++		CONFIG_SPL_U_BOOT_SIZE, (void *)loadaddr);
++
++	hdr = (const image_header_t *)loadaddr;
++	ret = spl_parse_image(hdr, spl);
++	if (ret)
++		return ret;
++
++	/* skip U-Boot mkimage header */
++	loadaddr += image_get_header_size();
++
++	if (!spl_check_data(spl, loadaddr))
++		return 1;
++
++	if (spl_is_compressed(spl))
++		ret = spl_uncompress(spl, loadaddr);
++	else
++		ret = spl_copy_image(spl, loadaddr);
++
++	return ret;
++}
++
++static int spl_load_hsnand_flash(struct spl_image *spl)
++{
++	const image_header_t *hdr;
++	const int image_cnt = 1 + spl_redund_images;
++	int ret, image_num;
++	unsigned long loadaddr = CONFIG_LOADADDR;
++	unsigned long addr, eb_size = 0;
++
++	/*
++	 * Image format:
++	 *
++	 * image_cnt = 1 + CONFIG_LTQ_SPL_REDUND_IMAGES
++	 * image_num = [0 .. (image_cnt - 1)]
++	 *
++	 * for each erase block starting at offset
++	 * image_num * CONFIG_SYS_NAND_BLOCK_SIZE:
++	 *
++	 * - SPL binary (32 KiB with checksum)
++	 * - SPL binary (32 KiB with checksum)
++	 * - SPL binary (32 KiB with checksum)
++	 * - padding bytes up to CONFIG_SYS_NAND_BLOCK_SIZE
++	 *
++	 * for each erase block starting at offset
++	 * CONFIG_SYS_NAND_BLOCK_SIZE * image_cnt + image_num *
++	 * roundup(CONFIG_SPL_U_BOOT_SIZE, CONFIG_SYS_NAND_BLOCK_SIZE):
++	 *
++	 * - 64 byte U-Boot mkimage header
++	 * - U-Boot binary
++	 */
++	spl_puts("SPL: loading U-Boot to RAM\n");
++#if spl_boot_hsnand_flash
++	eb_size = CONFIG_SYS_NAND_BLOCK_SIZE;
++#endif
++	addr = image_cnt * eb_size;
++	hdr = (const image_header_t *)loadaddr;
++
++	for (image_num = 0; image_num < image_cnt; image_num++) {
++		spl_debug("SPL: reading U-Boot image at offset %lx\n", addr);
++
++		ret = nand_spl_load_image(addr, CONFIG_SPL_U_BOOT_SIZE,
++			(void *)loadaddr);
++
++		addr += round_up(CONFIG_SPL_U_BOOT_SIZE, eb_size);
++
++		if (ret) {
++			spl_puts("SPL: ECC error\n");
++			continue;
++		}
++
++		ret = spl_parse_image(hdr, spl);
++		if (ret)
++			continue;
++
++		if (spl_check_data(spl, loadaddr + image_get_header_size())) {
++			ret = 0;
++			break;
++		} else {
++			ret = -1;
++			continue;
++		}
++	}
++
++	/* return if no valid image could be found */
++	if (ret)
++		return 1;
++
++	/* skip U-Boot mkimage header */
++	loadaddr += image_get_header_size();
++
++	if (spl_is_compressed(spl))
++		ret = spl_uncompress(spl, loadaddr);
++	else
++		ret = spl_copy_image(spl, loadaddr);
++
++	return ret;
++}
++
++static int spl_load(struct spl_image *spl)
++{
++	if (spl_boot_spi_flash)
++		return spl_load_spi_flash(spl);
++
++	if (spl_boot_nor_flash)
++		return spl_load_nor_flash(spl);
++
++	if (spl_boot_nand_flash)
++		return spl_load_nand_flash(spl);
++
++	if (spl_boot_hsnand_flash)
++		return spl_load_hsnand_flash(spl);
++
++	return 1;
++}
++
++static int spl_load_mem_ctrl_cfg(void)
++{
++	struct mc_tune_cfg *cfg = (struct mc_tune_cfg *)spl_mc_tune_buf;
++	int err = 0;
++
++	if (spl_boot_hsnand_flash)
++		return 1;
++
++	spl_debug("SPL: loading MC tune data from flash\n");
++
++#if spl_boot_spi_flash && spl_mc_tune
++	spi_flash_read(&spl_spi_flash, CONFIG_SPL_MC_TUNE_OFFS,
++		sizeof(*cfg), spl_mc_tune_buf);
++#endif
++
++#if spl_boot_nor_flash && spl_mc_tune
++	memcpy(spl_mc_tune_buf, (const void *)(CONFIG_SPL_MC_TUNE_OFFS +
++		CONFIG_SYS_FLASH_BASE), sizeof(*cfg));
++#endif
++
++#if spl_boot_nand_flash && spl_mc_tune
++	nand_spl_load_image(CONFIG_SPL_MC_TUNE_OFFS,
++		CONFIG_SYS_NAND_PAGE_SIZE, spl_mc_tune_buf);
++#endif
++
++	err = mc_tune_check(cfg);
++	if (err)
++		return 1;
++
++	if (cfg->state != MC_TUNE_VALID_STORED)
++		return 1;
++
++	return 0;
++}
++
++void __noreturn spl_lantiq_init(void)
++{
++	void (*uboot)(void) __noreturn;
++	struct spl_image spl;
++	struct mc_tune_cfg *mc_tune_cfg;
++	gd_t gd_data;
++	int ret;
++
++	gd = &gd_data;
++	barrier();
++	memset((void *)gd, 0, sizeof(gd_t));
++
++	ltq_cgu_init();
++	ltq_mem_init();
++	mips_cache_reset();
++	spl_console_init();
++	board_early_init_f();
++
++#if spl_boot_spi_flash
++	spl_debug("SPL: probing SPI flash\n");
++	spi_init();
++	spl_spi_flash_probe(&spl_spi_flash);
++#endif
++
++#if spl_boot_nand_flash
++	spl_debug("SPL: initializing NAND flash\n");
++	nand_init();
++#endif
++
++	if (spl_mc_tune) {
++		mc_tune_cfg = (struct mc_tune_cfg *)spl_mc_tune_buf;
++		ret = spl_load_mem_ctrl_cfg();
++		if (ret) {
++			spl_puts("SPL: tuning DDR SDRAM\n");
++			ret = mc_tune_perform(mc_tune_cfg);
++		} else {
++			spl_puts("SPL: applying tuned DDR SDRAM settings\n");
++			mc_tune_apply(mc_tune_cfg);
++		}
++		if (!ret) {
++			mc_tune_dump(mc_tune_cfg);
++			mc_tune_store_ram(mc_tune_cfg);
++		}
++	}
++
++#if spl_boot_hsnand_flash
++	spl_debug("SPL: initializing NAND flash\n");
++	nand_init();
++#endif
++
++	memset(&spl, 0, sizeof(spl));
++
++	ret = spl_load(&spl);
++	if (ret)
++		goto hang;
++
++	spl_debug("SPL: U-Boot entry %08lx\n", spl.entry_addr);
++	spl_puts("SPL: jumping to U-Boot\n");
++
++	flush_cache(spl.entry_addr, spl.entry_size);
++
++	uboot = (void *) spl.entry_addr;
++	uboot();
++
++hang:
++	spl_puts("SPL: cannot start U-Boot\n");
++
++	for (;;)
++		;
++}
++
++#if defined(CONFIG_TPL)
++void __noreturn tpl_load_image(void)
++{
++	void (*tpl)(void) __noreturn;
++
++#if spl_boot_nor_flash
++	memcpy((void *)CONFIG_TPL_TEXT_BASE,
++		(const void *)(CONFIG_SYS_FLASH_BASE + CONFIG_SPL_TPL_OFFS),
++		CONFIG_SPL_TPL_SIZE);
++#endif
++#if spl_boot_nand_flash
++	nand_init();
++	nand_spl_load_image(CONFIG_SPL_TPL_OFFS, CONFIG_SPL_TPL_SIZE,
++		(void *)CONFIG_TPL_TEXT_BASE);
++#endif
++
++	tpl = (void *)CONFIG_TPL_TEXT_BASE;
++	tpl();
++}
++#endif
+diff --git a/arch/mips/cpu/mips32/lantiq-common/start.S b/arch/mips/cpu/mips32/lantiq-common/start.S
+new file mode 100644
+index 0000000000..41a863e39d
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/start.S
+@@ -0,0 +1,133 @@
++/*
++ * Copyright (C) 2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <config.h>
++#include <asm/regdef.h>
++#include <asm/mipsregs.h>
++#include <asm/asm.h>
++
++#define S_PRIdCoID	16		/* Company ID (R) */
++#define M_PRIdCoID	(0xff << S_PRIdCoID)
++#define S_PRIdImp	8		/* Implementation ID (R) */
++#define M_PRIdImp	(0xff << S_PRIdImp)
++
++#define K_CacheAttrCWTnWA	0	/* Cacheable, write-thru, no write allocate */
++#define K_CacheAttrCWTWA	1	/* Cacheable, write-thru, write allocate */
++#define K_CacheAttrU		2	/* Uncached */
++#define K_CacheAttrC		3	/* Cacheable */
++#define K_CacheAttrCN		3	/* Cacheable, non-coherent */
++#define K_CacheAttrCCE		4	/* Cacheable, coherent, exclusive */
++#define K_CacheAttrCCS		5	/* Cacheable, coherent, shared */
++#define K_CacheAttrCCU		6	/* Cacheable, coherent, update */
++#define K_CacheAttrUA		7	/* Uncached accelerated */
++
++#define S_ConfigK23		28	/* Kseg2/3 coherency algorithm (FM MMU only) (R/W) */
++#define M_ConfigK23		(0x7 << S_ConfigK23)
++#define W_ConfigK23		3
++#define S_ConfigKU		25	/* Kuseg coherency algorithm (FM MMU only) (R/W) */
++#define M_ConfigKU		(0x7 << S_ConfigKU)
++#define W_ConfigKU		3
++
++#define S_ConfigMM		18	/* Merge mode (implementation specific) */
++#define M_ConfigMM		(0x1 << S_ConfigMM)
++
++#define S_StatusBEV		22	/* Enable Boot Exception Vectors (R/W) */
++#define M_StatusBEV		(0x1 << S_StatusBEV)
++
++#define S_StatusFR		26	/* Enable 64-bit FPRs (R/W) */
++#define M_StatusFR		(0x1 << S_StatusFR)
++
++#define S_ConfigK0		0	/* Kseg0 coherency algorithm (R/W) */
++#define M_ConfigK0		(0x7 << S_ConfigK0)
++
++#define CONFIG0_MIPS32_64_MSK	0x8000ffff
++#define STATUS_MIPS32_64_MSK	0xfffcffff
++
++#define STATUS_MIPS24K		0
++#define CONFIG0_MIPS24K		((K_CacheAttrCN << S_ConfigK23) |\
++				(K_CacheAttrCN << S_ConfigKU)  |\
++				(M_ConfigMM))
++
++#define STATUS_MIPS34K		0
++#define CONFIG0_MIPS34K		((K_CacheAttrCN << S_ConfigK23) |\
++				(K_CacheAttrCN << S_ConfigKU) |\
++				(M_ConfigMM))
++
++#define STATUS_MIPS32_64	(M_StatusBEV | M_StatusFR)
++#define CONFIG0_MIPS32_64	(K_CacheAttrCN << S_ConfigK0)
++
++#ifdef CONFIG_SOC_XWAY_DANUBE
++#define CONFIG0_LANTIQ		(CONFIG0_MIPS24K | CONFIG0_MIPS32_64)
++#define STATUS_LANTIQ		(STATUS_MIPS24K | STATUS_MIPS32_64)
++#endif
++
++#ifdef CONFIG_SOC_XWAY_VRX200
++#define CONFIG0_LANTIQ		(CONFIG0_MIPS34K | CONFIG0_MIPS32_64)
++#define STATUS_LANTIQ		(STATUS_MIPS34K | STATUS_MIPS32_64)
++#endif
++
++#if defined(CONFIG_TPL) && !defined(CONFIG_TPL_BUILD)
++#define TPL_LOADER	1
++#define SPL_ENTRY	tpl_load_image
++#else
++#define SPL_ENTRY	spl_lantiq_init
++#endif
++
++	.set noreorder
++
++LEAF(_start)
++
++#if defined(CONFIG_SYS_XWAY_EBU_BOOTCFG) && defined(TPL_LOADER)
++	/* Entry point */
++	b	main
++	 nop
++
++	/* Lantiq SoC Boot config word */
++	.org	0x10
++	.word	CONFIG_SYS_XWAY_EBU_BOOTCFG
++	.word	0
++
++main:
++#endif
++#ifndef TPL_LOADER
++	/* Init Timer */
++	mtc0	zero, CP0_COUNT
++	mtc0	zero, CP0_COMPARE
++
++	/* Setup MIPS24K/MIPS34K specifics (implementation dependent fields) */
++	mfc0	t0, CP0_CONFIG
++	li	t1, CONFIG0_MIPS32_64_MSK
++	and	t0, t1
++	li	t1, CONFIG0_LANTIQ
++	or	t0, t1
++	mtc0	t0, CP0_CONFIG
++
++	mfc0	t0, CP0_STATUS
++	li	t1, STATUS_MIPS32_64_MSK
++	and	t0, t1
++	li	t1, STATUS_LANTIQ
++	or	t0, t1
++	mtc0	t0, CP0_STATUS
++
++	/* Clear BSS */
++	la	t1, __bss_start
++	la	t2, __bss_end
++	sub	t1, 4
++1:
++	addi	t1, 4
++	bltl	t1, t2, 1b
++	 sw	zero, 0(t1)
++#endif
++	/* Setup stack pointer and force alignment on a 16 byte boundary */
++	li	sp, (CONFIG_SPL_STACK_BASE & ~0xF)
++	move	fp, sp
++
++	la	t9, SPL_ENTRY
++	jr	t9
++	 move	ra, zero
++
++	END(_start)
+diff --git a/arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds b/arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds
+new file mode 100644
+index 0000000000..5a466952db
+--- /dev/null
++++ b/arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds
+@@ -0,0 +1,85 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++MEMORY { .spl_mem : ORIGIN = CONFIG_SPL_TEXT_BASE, \
++		LENGTH = CONFIG_SPL_MAX_SIZE }
++MEMORY { .bss_mem : ORIGIN = CONFIG_SPL_BSS_BASE, \
++		LENGTH = CONFIG_SPL_BSS_SIZE }
++
++OUTPUT_FORMAT("elf32-tradbigmips", "elf32-tradbigmips", "elf32-tradlittlemips")
++OUTPUT_ARCH(mips)
++ENTRY(_start)
++SECTIONS
++{
++	. = ALIGN(4);
++	.text : {
++		*(.text*)
++	} > .spl_mem
++
++	. = ALIGN(4);
++	.rodata : {
++		*(SORT_BY_ALIGNMENT(SORT_BY_NAME(.rodata*)))
++	} > .spl_mem
++
++	. = ALIGN(4);
++	.data : {
++		*(SORT_BY_ALIGNMENT(.data*))
++		*(SORT_BY_ALIGNMENT(.sdata*))
++	} > .spl_mem
++
++	. = ALIGN(4);
++	.rel.dyn : {
++		*(.rel.dyn)
++	} > .spl_mem
++
++	. = ALIGN(4);
++	__image_copy_end = .;
++
++	.bss (NOLOAD) : {
++		__bss_start = .;
++		*(.bss*)
++		*(.sbss*)
++		*(COMMON)
++		. = ALIGN(4);
++		__bss_end = .;
++	} > .bss_mem
++
++	.dynsym : {
++		*(.dynsym)
++	}
++
++	.dynbss : {
++		*(.dynbss)
++	}
++
++	.dynstr : {
++		*(.dynstr)
++	}
++
++	.dynamic : {
++		*(.dynamic)
++	}
++
++	.plt : {
++		*(.plt)
++	}
++
++	.interp : {
++		*(.interp)
++	}
++
++	.gnu : {
++		*(.gnu*)
++	}
++
++	.MIPS.stubs : {
++		*(.MIPS.stubs)
++	}
++
++	.hash : {
++		*(.hash)
++	}
++}
+diff --git a/arch/mips/include/asm/lantiq/chipid.h b/arch/mips/include/asm/lantiq/chipid.h
+new file mode 100644
+index 0000000000..c9921b0457
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/chipid.h
+@@ -0,0 +1,73 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_CHIPID_H__
++#define __LANTIQ_CHIPID_H__
++
++enum ltq_chip_partnum {
++	LTQ_SOC_UNKNOWN = 0,
++	LTQ_SOC_VRX288_2 = 0x000B,	/* VRX288 v1.2 */
++	LTQ_SOC_VRX268_2 = 0x000C,	/* VRX268 v1.2 */
++	LTQ_SOC_GRX288_2 = 0x000D,	/* GRX288 v1.2 */
++	LTQ_SOC_DANUBE = 0x0129,
++	LTQ_SOC_DANUBE_S = 0x012B,
++	LTQ_SOC_TWINPASS = 0x012D,
++	LTQ_SOC_VRX288 = 0x01C0,	/* VRX288 v1.1 */
++	LTQ_SOC_VRX268 = 0x01C2,	/* VRX268 v1.1 */
++	LTQ_SOC_GRX288 = 0x01C9,	/* GRX288 v1.1 */
++};
++
++extern unsigned int ltq_chip_version_get(void);
++extern unsigned int ltq_chip_partnum_get(void);
++extern const char *ltq_chip_partnum_str(void);
++
++extern void ltq_chip_print_info(void);
++
++#ifdef CONFIG_SOC_XWAY_DANUBE
++static inline int ltq_soc_is_danube(void)
++{
++	return 1;
++}
++#else
++static inline int ltq_soc_is_danube(void)
++{
++	return 0;
++}
++#endif
++
++#ifdef CONFIG_SOC_XWAY_VRX200
++static inline int ltq_soc_is_vrx200(void)
++{
++	return 1;
++}
++
++static inline int ltq_soc_is_vrx200_v1(void)
++{
++	return ltq_chip_version_get() == 1;
++}
++
++static inline int ltq_soc_is_vrx200_v2(void)
++{
++	return ltq_chip_version_get() == 2;
++}
++#else
++static inline int ltq_soc_is_vrx200(void)
++{
++	return 0;
++}
++
++static inline int ltq_soc_is_vrx200_v1(void)
++{
++	return 0;
++}
++
++static inline int ltq_soc_is_vrx200_v2(void)
++{
++	return 0;
++}
++#endif
++
++#endif /* __LANTIQ_CHIPID_H__ */
+diff --git a/arch/mips/include/asm/lantiq/clk.h b/arch/mips/include/asm/lantiq/clk.h
+new file mode 100644
+index 0000000000..e13f000a2c
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/clk.h
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ * *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_CLK_H__
++#define __LANTIQ_CLK_H__
++
++/* Symbolic clock speeds */
++enum ltq_clk {
++	CLOCK_83_MHZ = 83333333,
++	CLOCK_111_MHZ = 111111111,
++	CLOCK_125_MHZ = 125000000,
++	CLOCK_133_MHZ = 133333333,
++	CLOCK_166_MHZ = 166666667,
++	CLOCK_197_MHZ = 197000000,
++	CLOCK_333_MHZ = 333333333,
++	CLOCK_393_MHZ = 393219000,
++	CLOCK_500_MHZ = 500000000,
++	CLOCK_600_MHZ = 600000000,
++	CLOCK_1000_MHZ = 1000000000,
++};
++
++extern unsigned long ltq_get_cpu_clock(void);
++extern unsigned long ltq_get_bus_clock(void);
++extern unsigned long ltq_get_io_region_clock(void);
++
++#endif /* __LANTIQ_CLK_H__ */
+diff --git a/arch/mips/include/asm/lantiq/config.h b/arch/mips/include/asm/lantiq/config.h
+new file mode 100644
+index 0000000000..4a76fa9444
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/config.h
+@@ -0,0 +1,197 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_CONFIG_H__
++#define __LANTIQ_CONFIG_H__
++
++/* Memory usage */
++#define CONFIG_SYS_MAXARGS		24
++#define CONFIG_SYS_BOOTPARAMS_LEN	128*1024
++
++/* Command line */
++#define CONFIG_SYS_PROMPT		"U-Boot # "
++#define CONFIG_SYS_CBSIZE		512
++#define CONFIG_SYS_PBSIZE		(CONFIG_SYS_CBSIZE + \
++					sizeof(CONFIG_SYS_PROMPT)+16)
++
++#define CONFIG_SYS_HUSH_PARSER
++#define CONFIG_SYS_PROMPT_HUSH_PS2	"> "
++
++/*
++ * Enable advanced console features on demand to reduce
++ * flash and RAM footprint
++ */
++#if defined(CONFIG_LTQ_ADVANCED_CONSOLE)
++#define CONFIG_SYS_LONGHELP
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CMDLINE_EDITING
++#endif
++
++/* SPI flash SPL */
++#if defined(CONFIG_LTQ_SUPPORT_SPL_SPI_FLASH) && defined(CONFIG_SYS_BOOT_SFSPL)
++#define CONFIG_SPL
++#define CONFIG_SPL_SPI_SUPPORT
++#define CONFIG_SPL_SPI_FLASH_SUPPORT
++#define CONFIG_SPI_SPL_SIMPLE
++#endif
++
++/*
++ * NAND flash SPL
++ * BOOT CFG 06 only (address cycle based probing, 2KB or 512B page size)
++ */
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH) && defined(CONFIG_SYS_BOOT_NANDSPL)
++#define CONFIG_SPL
++#define CONFIG_TPL
++#define CONFIG_SPL_NAND_SUPPORT
++#define CONFIG_SPL_NAND_DRIVERS
++#define CONFIG_SPL_NAND_ECC
++#define CONFIG_SPL_NAND_SOFTECC
++#endif
++
++/*
++ * NAND flash SPL with hardware support
++ */
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH) && defined(CONFIG_SYS_BOOT_NANDHWSPL)
++#define CONFIG_SPL
++#define CONFIG_SPL_NAND_SUPPORT
++#define CONFIG_SPL_NAND_DRIVERS
++#define CONFIG_SPL_DMA_SUPPORT
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NOR_FLASH) && defined(CONFIG_SYS_BOOT_NORSPL)
++#define CONFIG_SPL
++#define CONFIG_TPL
++#endif
++
++/* Common SPL */
++#if defined(CONFIG_SPL)
++#define CONFIG_SKIP_LOWLEVEL_INIT
++#define CONFIG_SPL_LIBGENERIC_SUPPORT
++#define CONFIG_SPL_GPIO_SUPPORT
++#define CONFIG_SPL_START_S_PATH		\
++		"arch/mips/cpu/mips32/lantiq-common"
++#define CONFIG_SPL_LDSCRIPT		\
++		"arch/mips/cpu/mips32/lantiq-common/u-boot-spl.lds"
++#endif
++
++#if defined(CONFIG_LTQ_SPL_CONSOLE)
++#define CONFIG_SPL_SERIAL_SUPPORT
++#define CONFIG_SPL_LIBCOMMON_SUPPORT
++#endif
++
++#if defined(CONFIG_LTQ_SPL_COMP_LZO)
++#define CONFIG_LZO
++#define CONFIG_SPL_LZO_SUPPORT
++#endif
++
++/* Basic commands */
++#define CONFIG_CMD_BDI
++#define CONFIG_CMD_EDITENV
++#define CONFIG_CMD_IMI
++#define CONFIG_CMD_MEMORY
++#define CONFIG_CMD_RUN
++#define CONFIG_CMD_SAVEENV
++#define CONFIG_CMD_LOADS
++#define CONFIG_CMD_LOADB
++
++/* Other U-Boot settings */
++#define CONFIG_UBOOT_VERSION
++#define CONFIG_TIMESTAMP
++
++/* Generic board */
++#define CONFIG_SYS_GENERIC_BOARD
++#define CONFIG_BOARD_EARLY_INIT_F
++#define CONFIG_DISPLAY_BOARDINFO
++
++/* Boot interface */
++#define CONFIG_FIT
++#define CONFIG_OF_LIBFDT
++#define CONFIG_MIPS_BOOT_CMDLINE_LEGACY
++#define CONFIG_MIPS_BOOT_FDT
++
++/* Default environment */
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NOR_FLASH)
++#define CONFIG_ENV_WRITE_UBOOT_NOR					\
++	"write-uboot-nor="						\
++	"protect off " __stringify(CONFIG_SYS_FLASH_BASE) " +$filesize && " \
++	"erase " __stringify(CONFIG_SYS_FLASH_BASE) " +$filesize && "	\
++	"cp.b $fileaddr " __stringify(CONFIG_SYS_FLASH_BASE) " $filesize\0"
++
++#define CONFIG_ENV_LOAD_UBOOT_NOR					\
++	"load-uboot-nor=tftpboot u-boot.ltq.lzo.norspl\0"
++
++#define CONFIG_ENV_UPDATE_UBOOT_NOR					\
++	"update-uboot-nor=run load-uboot-nor write-uboot-nor\0"
++#else
++#define CONFIG_ENV_WRITE_UBOOT_NOR
++#define CONFIG_ENV_LOAD_UBOOT_NOR
++#define CONFIG_ENV_UPDATE_UBOOT_NOR
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_SPI_FLASH)
++#define CONFIG_ENV_SF_PROBE					\
++	"sf-probe=sf probe " __stringify(CONFIG_ENV_SPI_CS) " "	\
++	__stringify(CONFIG_ENV_SPI_MAX_HZ) " "			\
++	__stringify(CONFIG_ENV_SPI_MODE) " \0"
++
++#define CONFIG_ENV_WRITE_UBOOT_SF				\
++	"write-uboot-sf="					\
++	"run sf-probe && sf erase 0 +$filesize && "		\
++	"sf write $fileaddr 0 $filesize\0"
++
++#define CONFIG_ENV_LOAD_UBOOT_SF					\
++	"load-uboot-sf=tftpboot u-boot.ltq.lzo.sfspl\0"
++
++#define CONFIG_ENV_UPDATE_UBOOT_SF					\
++	"update-uboot-sf=run load-uboot-sf write-uboot-sf\0"
++#else
++#define CONFIG_ENV_SF_PROBE
++#define CONFIG_ENV_WRITE_UBOOT_SF
++#define CONFIG_ENV_LOAD_UBOOT_SF
++#define CONFIG_ENV_UPDATE_UBOOT_SF
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH)
++#define CONFIG_ENV_WRITE_UBOOT_NAND				\
++	"write-uboot-nand="					\
++	"nand erase 0 $filesize && "				\
++	"nand write $fileaddr 0 $filesize\0"
++
++#define CONFIG_ENV_LOAD_UBOOT_NAND					\
++	"load-uboot-nand=tftpboot u-boot.ltq.lzo.nandspl\0"
++
++#define CONFIG_ENV_LOAD_UBOOT_HSNAND					\
++	"load-uboot-hsnand=tftpboot u-boot.ltq.lzo.nandhwspl\0"
++
++#define CONFIG_ENV_UPDATE_UBOOT_NAND					\
++	"update-uboot-nand=run load-uboot-nand write-uboot-nand\0"
++
++#define CONFIG_ENV_UPDATE_UBOOT_HSNAND					\
++	"update-uboot-hsnand=run load-uboot-hsnand write-uboot-nand\0"
++#else
++#define CONFIG_ENV_WRITE_UBOOT_NAND
++#define CONFIG_ENV_LOAD_UBOOT_NAND
++#define CONFIG_ENV_LOAD_UBOOT_HSNAND
++#define CONFIG_ENV_UPDATE_UBOOT_NAND
++#define CONFIG_ENV_UPDATE_UBOOT_HSNAND
++#endif
++
++#define CONFIG_ENV_LANTIQ_DEFAULTS	\
++	CONFIG_ENV_WRITE_UBOOT_NOR	\
++	CONFIG_ENV_LOAD_UBOOT_NOR	\
++	CONFIG_ENV_UPDATE_UBOOT_NOR	\
++	CONFIG_ENV_SF_PROBE		\
++	CONFIG_ENV_WRITE_UBOOT_SF	\
++	CONFIG_ENV_LOAD_UBOOT_SF	\
++	CONFIG_ENV_UPDATE_UBOOT_SF	\
++	CONFIG_ENV_WRITE_UBOOT_NAND	\
++	CONFIG_ENV_LOAD_UBOOT_NAND	\
++	CONFIG_ENV_LOAD_UBOOT_HSNAND	\
++	CONFIG_ENV_UPDATE_UBOOT_NAND	\
++	CONFIG_ENV_UPDATE_UBOOT_HSNAND
++
++#endif /* __LANTIQ_CONFIG_H__ */
+diff --git a/arch/mips/include/asm/lantiq/cpu.h b/arch/mips/include/asm/lantiq/cpu.h
+new file mode 100644
+index 0000000000..78aff4924d
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/cpu.h
+@@ -0,0 +1,36 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_CPU_H__
++#define __LANTIQ_CPU_H__
++
++enum ltq_boot_select {
++	BOOT_NOR,
++	BOOT_NOR_NO_BOOTROM,
++	BOOT_UART,
++	BOOT_UART_NO_EEPROM,
++	BOOT_SPI,
++	BOOT_NAND,
++	BOOT_PCI,
++	BOOT_MII0,
++	BOOT_RMII0,
++	BOOT_RGMII1,
++	BOOT_UNKNOWN,
++};
++
++enum ltq_boot_select ltq_boot_select(void);
++const char *ltq_boot_select_str(void);
++
++void ltq_cgu_init(void);
++void ltq_mem_init(void);
++void ltq_pmu_init(void);
++void ltq_ebu_init(void);
++void ltq_gpio_init(void);
++
++void ltq_pll_init(void);
++void ltq_dcdc_init(unsigned int dig_ref);
++
++#endif /* __LANTIQ_CPU_H__ */
+diff --git a/arch/mips/include/asm/lantiq/dma.h b/arch/mips/include/asm/lantiq/dma.h
+new file mode 100644
+index 0000000000..15a29c9994
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/dma.h
+@@ -0,0 +1,94 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_DMA_H__
++#define __LANTIQ_DMA_H__
++
++enum ltq_dma_endianess {
++	LTQ_DMA_ENDIANESS_B0_B1_B2_B3,	/* No byte swapping */
++	LTQ_DMA_ENDIANESS_B1_B0_B3_B2,	/* B0B1B2B3 => B1B0B3B2 */
++	LTQ_DMA_ENDIANESS_B2_B3_B0_B1,	/* B0B1B2B3 => B2B3B0B1 */
++	LTQ_DMA_ENDIANESS_B3_B2_B1_B0,	/* B0B1B2B3 => B3B2B1B0 */
++};
++
++enum ltq_dma_burst_len {
++	LTQ_DMA_BURST_2WORDS = 1,
++	LTQ_DMA_BURST_4WORDS = 2,
++	LTQ_DMA_BURST_8WORDS = 3,
++};
++
++struct ltq_dma_desc {
++	u32 ctl;
++	u32 addr;
++};
++
++struct ltq_dma_channel {
++	struct ltq_dma_device *dev;
++	u8 chan_no;
++	u8 class;
++	u16 num_desc;
++	struct ltq_dma_desc *desc_base;
++	void *mem_base;
++	u32 dma_addr;
++};
++
++struct ltq_dma_device {
++	enum ltq_dma_endianess rx_endian_swap;
++	enum ltq_dma_endianess tx_endian_swap;
++	enum ltq_dma_burst_len rx_burst_len;
++	enum ltq_dma_burst_len tx_burst_len;
++	struct ltq_dma_channel rx_chan;
++	struct ltq_dma_channel tx_chan;
++	u8 port;
++};
++
++/**
++ * Initialize DMA hardware and driver
++ */
++void ltq_dma_init(void);
++
++/**
++ * Register given DMA client context
++ *
++ * @returns 0 on success, negative value otherwise
++ */
++int ltq_dma_register(struct ltq_dma_device *dev);
++
++/**
++ * Reset and halt all channels related to given DMA client
++ */
++void ltq_dma_reset(struct ltq_dma_device *dev);
++void ltq_dma_enable(struct ltq_dma_device *dev);
++void ltq_dma_disable(struct ltq_dma_device *dev);
++
++/**
++ * Map RX DMA descriptor to memory region
++ *
++ * @returns 0 on success, negative value otherwise
++ */
++int ltq_dma_rx_map(struct ltq_dma_device *dev, int index, void *data, int len);
++
++/**
++ * Check if new data is available.
++ *
++ * @returns length of received data, 0 otherwise
++ */
++int ltq_dma_rx_poll(struct ltq_dma_device *dev, int index);
++
++int ltq_dma_rx_length(struct ltq_dma_device *dev, int index);
++
++/**
++ * Map TX DMA descriptor to memory region
++ *
++ * @returns 0 on success, negative value otherwise
++ */
++int ltq_dma_tx_map(struct ltq_dma_device *dev, int index, void *data, int len,
++			unsigned long timeout);
++
++int ltq_dma_tx_wait(struct ltq_dma_device *dev, int index,
++			unsigned long timeout);
++
++#endif /* __LANTIQ_DMA_H__ */
+diff --git a/arch/mips/include/asm/lantiq/eth.h b/arch/mips/include/asm/lantiq/eth.h
+new file mode 100644
+index 0000000000..732dc7c8f3
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/eth.h
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_ETH_H__
++#define __LANTIQ_ETH_H__
++
++#include <phy.h>
++
++enum LTQ_ETH_PORT_FLAGS {
++	LTQ_ETH_PORT_NONE	= 0,
++	LTQ_ETH_PORT_PHY	= 1,
++	LTQ_ETH_PORT_SWITCH	= (1 << 1),
++	LTQ_ETH_PORT_MAC	= (1 << 2),
++	LTQ_ETH_PORT_RMII_TURBO	= (1 << 3),
++	LTQ_ETH_PORT_RMII_CLKO	= (1 << 4),
++};
++
++struct ltq_eth_port_config {
++	u8 num;
++	u8 phy_addr;
++	u16 flags;
++	phy_interface_t phy_if;
++	u8 rgmii_rx_delay;
++	u8 rgmii_tx_delay;
++	u8 prio;
++};
++
++struct ltq_eth_board_config {
++	const struct ltq_eth_port_config *ports;
++	int num_ports;
++};
++
++extern int ltq_eth_initialize(const struct ltq_eth_board_config *board_config);
++
++#endif /* __LANTIQ_ETH_H__ */
+diff --git a/arch/mips/include/asm/lantiq/gpio.h b/arch/mips/include/asm/lantiq/gpio.h
+new file mode 100644
+index 0000000000..a0e12b509c
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/gpio.h
+@@ -0,0 +1,58 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_GPIO_H__
++#define __LANTIQ_GPIO_H__
++
++enum ltq_gpio_dir {
++	GPIO_DIR_IN = 0,
++	GPIO_DIR_OUT
++};
++
++enum ltq_gpio_od {
++	GPIO_OD_ACTIVE = 0,
++	GPIO_OD_NORMAL
++};
++
++enum ltq_gpio_altsel {
++	GPIO_ALTSEL_CLR = 0,
++	GPIO_ALTSEL_SET
++};
++
++enum ltq_gpio_pull {
++	GPIO_PULL_DISABLE = 0,
++	GPIO_PULL_UP,
++	GPIO_PULL_DOWN
++};
++
++extern int gpio_set_altfunc(unsigned gpio, enum ltq_gpio_altsel altsel0,
++			enum ltq_gpio_altsel altsel1, enum ltq_gpio_dir dir);
++extern int gpio_set_opendrain(unsigned gpio, enum ltq_gpio_od od);
++extern int gpio_set_pull(unsigned gpio, enum ltq_gpio_pull pull);
++
++static inline int gpio_to_port(unsigned gpio)
++{
++	return gpio >> 4;
++}
++
++static inline int gpio_to_pin(unsigned gpio)
++{
++	return gpio & 0xF;
++}
++
++static inline int gpio_to_bit(unsigned gpio)
++{
++	return 1 << gpio_to_pin(gpio);
++}
++
++static inline int gpio_to_gpio(unsigned port, unsigned pin)
++{
++	return (port << 4) | (pin & 0xF);
++}
++
++#include <asm-generic/gpio.h>
++
++#endif /* __LANTIQ_GPIO_H__ */
+diff --git a/arch/mips/include/asm/lantiq/io.h b/arch/mips/include/asm/lantiq/io.h
+new file mode 100644
+index 0000000000..bf83403f03
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/io.h
+@@ -0,0 +1,40 @@
++/*
++ * Copyright (C) 2010 John Crispin <blogic@openwrt.org>
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_IO_H__
++#define __LANTIQ_IO_H__
++
++#include <asm/io.h>
++
++#define ltq_readb(a)		__raw_readb(a)
++#define ltq_writeb(a, v)	__raw_writeb(v, a)
++
++#define ltq_readl(a)		__raw_readl(a)
++#define ltq_writel(a, v)	__raw_writel(v, a)
++
++#define ltq_clrbits(a, clear) \
++	ltq_writel(a, ltq_readl(a) & ~(clear))
++
++#define ltq_setbits(a, set) \
++	ltq_writel(a, ltq_readl(a) | (set))
++
++#define ltq_clrsetbits(a, clear, set) \
++	ltq_writel(a, (ltq_readl(a) & ~(clear)) | (set))
++
++#define ltq_build_check_reg(reg, name, offset)	\
++	BUILD_BUG_ON(offsetof(reg, name) != (offset))
++
++static inline void ltq_reg_dump(const void *addr, const char *desc)
++{
++	u32 data;
++
++	data = ltq_readl(addr);
++	printf("ltq_reg_dump: %s 0x%p = 0x%08x\n",
++		desc, addr, data);
++}
++
++#endif /* __LANTIQ_IO_H__ */
+diff --git a/arch/mips/include/asm/lantiq/mem.h b/arch/mips/include/asm/lantiq/mem.h
+new file mode 100644
+index 0000000000..ce19418789
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/mem.h
+@@ -0,0 +1,139 @@
++/*
++ * This file is released under the terms of GPL v2 and any later version.
++ * See the file COPYING in the root directory of the source tree for details.
++ *
++ * Copyright (C) 2014 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ */
++
++#ifndef __LANTIQ_MEM_H__
++#define __LANTIQ_MEM_H__
++
++#include <asm/io.h>
++
++int ltq_mem_test_data_bus(phys_size_t dram_size);
++int ltq_mem_test_address_bus(phys_size_t dram_size);
++int ltq_mem_test_device(phys_addr_t addr, phys_size_t size);
++int ltq_mem_test_tune(phys_size_t dram_size, unsigned int slice, int quick);
++
++static inline void sdram_uc_writeb(u32 offset, u8 val)
++{
++	__raw_writeb(val, (void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline void sdram_uc_writew(u32 offset, u16 val)
++{
++	__raw_writew(val, (void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline void sdram_uc_writel(phys_addr_t offset, u32 val)
++{
++	__raw_writel(val, (void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline void sdram_writeb(u32 offset, u8 val)
++{
++	__raw_writeb(val, (void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline void sdram_writew(u32 offset, u16 val)
++{
++	__raw_writew(val, (void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline void sdram_writel(phys_addr_t offset, u32 val)
++{
++	__raw_writel(val, (void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline u8 sdram_uc_readb(u32 offset)
++{
++	return __raw_readb((void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline u16 sdram_uc_readw(u32 offset)
++{
++	return __raw_readw((void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline u32 sdram_uc_readl(phys_addr_t offset)
++{
++	return __raw_readl((void *)(CONFIG_SYS_SDRAM_BASE_UC + offset));
++}
++
++static inline u8 sdram_readb(u32 offset)
++{
++	return __raw_readb((void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline u16 sdram_readw(u32 offset)
++{
++	return __raw_readw((void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline u32 sdram_readl(phys_addr_t offset)
++{
++	return __raw_readl((void *)(CONFIG_SYS_SDRAM_BASE + offset));
++}
++
++static inline void sdram_flush_dcache_line(phys_addr_t offset,
++						unsigned long dcache_lsize)
++{
++	phys_addr_t addr = CONFIG_SYS_SDRAM_BASE + offset;
++	flush_dcache_range(addr, addr + dcache_lsize - 1);
++}
++
++static inline void cpu_sync(void)
++{
++	__asm__ __volatile__(			\
++		".set	push\n\t"		\
++		".set	noreorder\n\t"		\
++		".set	mips2\n\t"		\
++		"sync\n\t"			\
++		".set	pop"			\
++		: /* no output */		\
++		: /* no input */		\
++		: "memory");
++}
++
++enum mc_tune_state {
++	MC_TUNE_INVALID,
++	MC_TUNE_VALID,
++	MC_TUNE_VALID_STORED,
++};
++
++#define MC_TUNE_MAGIC	0x4d435455
++
++struct mc_tune_cfg {
++	u32 magic;
++	u32 crc;
++	u8 state;
++	u8 gate_echo_dll_l;
++	u8 gate_echo_dll_u;
++	u8 write_dqs_delay_l;
++	u8 write_dqs_delay_u;
++	u8 read_dqs_delay_l;
++	u8 read_dqs_delay_u;
++};
++
++static inline struct mc_tune_cfg *mc_tune_data(void)
++{
++	return (struct mc_tune_cfg *)CONFIG_SPL_MC_TUNE_BASE;
++}
++
++void mc_tune_dump(const struct mc_tune_cfg *cfg);
++int mc_tune_perform(struct mc_tune_cfg *cfg);
++void mc_tune_apply(const struct mc_tune_cfg *cfg);
++int mc_tune_check(const struct mc_tune_cfg *cfg);
++int mc_tune_load_ram(struct mc_tune_cfg *cfg);
++void mc_tune_store_ram(struct mc_tune_cfg *cfg);
++
++#if defined(CONFIG_LTQ_SPL_MC_TUNE)
++int mc_tune_store_flash(void);
++#else
++static inline int mc_tune_store_flash(void)
++{
++	return 0;
++}
++#endif
++
++#endif /* __LANTIQ_MEM_H__ */
+diff --git a/arch/mips/include/asm/lantiq/pm.h b/arch/mips/include/asm/lantiq/pm.h
+new file mode 100644
+index 0000000000..9db7117738
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/pm.h
+@@ -0,0 +1,21 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_PM_H__
++#define __LANTIQ_PM_H__
++
++enum ltq_pm_modules {
++	LTQ_PM_CORE,
++	LTQ_PM_DMA,
++	LTQ_PM_ETH,
++	LTQ_PM_SPI,
++};
++
++u32 ltq_pm_map(enum ltq_pm_modules module);
++int ltq_pm_enable(enum ltq_pm_modules module);
++int ltq_pm_disable(enum ltq_pm_modules module);
++
++#endif /* __LANTIQ_PM_H__ */
+diff --git a/arch/mips/include/asm/lantiq/reset.h b/arch/mips/include/asm/lantiq/reset.h
+new file mode 100644
+index 0000000000..0dbc994134
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/reset.h
+@@ -0,0 +1,37 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __LANTIQ_RESET_H__
++#define __LANTIQ_RESET_H__
++
++enum ltq_reset_modules {
++	LTQ_RESET_CORE,
++	LTQ_RESET_DMA,
++	LTQ_RESET_ETH,
++	LTQ_RESET_PHY,
++	LTQ_RESET_HARD,
++	LTQ_RESET_SOFT,
++};
++
++extern u32 ltq_reset_map(enum ltq_reset_modules module);
++extern int ltq_reset_activate(enum ltq_reset_modules module);
++extern int ltq_reset_deactivate(enum ltq_reset_modules module);
++
++static inline int ltq_reset_once(enum ltq_reset_modules module, ulong usec)
++{
++	int ret;
++
++	ret = ltq_reset_activate(module);
++	if (ret)
++		return ret;
++
++	__udelay(usec);
++	ret = ltq_reset_deactivate(module);
++
++	return ret;
++}
++
++#endif /* __LANTIQ_RESET_H__ */
+diff --git a/arch/mips/include/asm/lantiq/spl.h b/arch/mips/include/asm/lantiq/spl.h
+new file mode 100644
+index 0000000000..b818c46c92
+--- /dev/null
++++ b/arch/mips/include/asm/lantiq/spl.h
+@@ -0,0 +1,83 @@
++/*
++ * This file is released under the terms of GPL v2 and any later version.
++ * See the file COPYING in the root directory of the source tree for details.
++ *
++ * Copyright (C) 2011-2014 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ */
++
++#ifndef __LANTIQ_SPL_H__
++#define __LANTIQ_SPL_H__
++
++#if defined(CONFIG_LTQ_SPL_CONSOLE)
++#define spl_has_console		1
++
++#if defined(CONFIG_LTQ_SPL_DEBUG)
++#define spl_has_debug		1
++#else
++#define spl_has_debug		0
++#endif
++
++#if defined(CONFIG_LTQ_SPL_MC_TUNE_DEBUG)
++#define spl_mc_tune_debug	1
++#else
++#define spl_mc_tune_debug	0
++#endif
++
++#else
++#define spl_has_console		0
++#define spl_has_debug		0
++#define spl_mc_tune_debug	0
++#endif
++
++#define spl_debug(fmt, args...)			\
++	do {					\
++		if (spl_has_debug)		\
++			printf(fmt, ##args);	\
++	} while (0)
++
++#define spl_puts(msg)				\
++	do {					\
++		if (spl_has_console)		\
++			puts(msg);		\
++	} while (0)
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_SPI_FLASH) && defined(CONFIG_SYS_BOOT_SFSPL)
++#define spl_boot_spi_flash	1
++#else
++#define spl_boot_spi_flash	0
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NOR_FLASH) && defined(CONFIG_SYS_BOOT_NORSPL)
++#define spl_boot_nor_flash	1
++#else
++#define spl_boot_nor_flash	0
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH) && defined(CONFIG_SYS_BOOT_NANDSPL)
++#define spl_boot_nand_flash	1
++#else
++#define spl_boot_nand_flash	0
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH) && defined(CONFIG_SYS_BOOT_NANDHWSPL)
++
++#define spl_boot_hsnand_flash	1
++#else
++#define spl_boot_hsnand_flash	0
++#endif
++
++#if defined(CONFIG_LTQ_SPL_MC_TUNE)
++#define spl_mc_tune		1
++#else
++#define spl_mc_tune		0
++#endif
++
++#if defined(CONFIG_LTQ_SPL_REDUND_IMAGES)
++#define spl_redund_images	CONFIG_LTQ_SPL_REDUND_IMAGES
++#else
++#define spl_redund_images	0
++#endif
++
++void mips_cache_reset(void);
++
++#endif /* __LANTIQ_SPL_H__ */
+-- 
+2.11.0
+

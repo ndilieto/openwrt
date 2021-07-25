@@ -1,0 +1,42 @@
+From 9842bfa15e72bc9f67dd8d83fd9f3ba426b18fa2 Mon Sep 17 00:00:00 2001
+From: Nicola Di Lieto <nicola.dilieto@gmail.com>
+Date: Sat, 24 Jul 2021 10:30:19 +0200
+Subject: [PATCH 154/158] Customize slx501 configuration
+
+- support larger (32MB) bootm images
+- enable autoboot
+- enable gpio, loads and tftpput commands
+---
+ include/configs/slx501.h | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/include/configs/slx501.h b/include/configs/slx501.h
+index 11e482a91e..801386830c 100644
+--- a/include/configs/slx501.h
++++ b/include/configs/slx501.h
+@@ -113,6 +113,9 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_MISC
+ #define CONFIG_CMD_ECHO
++#define CONFIG_CMD_GPIO
++#define CONFIG_CMD_LOADS
++#define CONFIG_CMD_TFTPPUT
+ 
+ /* Boot */
+ #define CONFIG_MIPS_BOOT_FDT
+@@ -120,9 +123,11 @@
+ #define CONFIG_OF_LIBFDT
+ #define CONFIG_LZMA
+ #define CONFIG_LZO
++#define CONFIG_BOOTDELAY		3
+ 
+ /* Environment */
+-#define CONFIG_LOADADDR			CONFIG_SYS_LOAD_ADDR
++#define CONFIG_LOADADDR			0x82000000
++#define CONFIG_SYS_BOOTM_LEN		(32 << 20)
+ 
+ #define CONFIG_ENV_MTDPARTS			\
+ 	"mtdids="MTDIDS_DEFAULT"\0"		\
+-- 
+2.11.0
+

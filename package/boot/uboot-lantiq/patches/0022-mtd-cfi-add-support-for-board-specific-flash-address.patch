@@ -1,0 +1,46 @@
+From f2a667453d0d66b88922463ca048e8ec91f4792a Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:52:51 +0100
+Subject: [PATCH 022/158] mtd: cfi: add support for board-specific flash
+ address swapping
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/cfi_flash.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/cfi_flash.c b/drivers/mtd/cfi_flash.c
+index a389cd101c..fa4fae7bdf 100644
+--- a/drivers/mtd/cfi_flash.c
++++ b/drivers/mtd/cfi_flash.c
+@@ -161,6 +161,18 @@ u64 flash_read64(void *addr)__attribute__((weak, alias("__flash_read64")));
+ #define flash_read64	__flash_read64
+ #endif
+ 
++static inline void *__flash_swap_addr(unsigned long addr)
++{
++	return (void *) addr;
++}
++
++#ifdef CONFIG_CFI_FLASH_USE_WEAK_ADDR_SWAP
++void *flash_swap_addr(unsigned long addr)
++		__attribute__((weak, alias("__flash_swap_addr")));
++#else
++#define flash_swap_addr	__flash_swap_addr
++#endif
++
+ /*-----------------------------------------------------------------------
+  */
+ #if defined(CONFIG_ENV_IS_IN_FLASH) || defined(CONFIG_ENV_ADDR_REDUND) || (CONFIG_SYS_MONITOR_BASE >= CONFIG_SYS_FLASH_BASE)
+@@ -196,7 +208,7 @@ flash_map (flash_info_t * info, flash_sect_t sect, uint offset)
+ {
+ 	unsigned int byte_offset = offset * info->portwidth;
+ 
+-	return (void *)(info->start[sect] + byte_offset);
++	return flash_swap_addr(info->start[sect] + byte_offset);
+ }
+ 
+ static inline void flash_unmap(flash_info_t *info, flash_sect_t sect,
+-- 
+2.11.0
+

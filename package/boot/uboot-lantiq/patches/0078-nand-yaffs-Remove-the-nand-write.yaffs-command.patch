@@ -1,0 +1,206 @@
+From 2ae6ac04eeba25a49e6557023996f27e53d5f0dd Mon Sep 17 00:00:00 2001
+From: Peter Tyser <ptyser@xes-inc.com>
+Date: Tue, 3 Feb 2015 11:58:16 -0600
+Subject: [PATCH 078/158] nand: yaffs: Remove the "nand write.yaffs" command
+
+This command is only enabled by one board, complicates the NAND code,
+and doesn't appear to have been functioning properly for several
+years.  If there are no bad blocks in the NAND region being written
+nand_write_skip_bad() will take the shortcut of calling nand_write()
+which bypasses the special yaffs handling.  This causes invalid YAFFS
+data to be written. See
+http://lists.denx.de/pipermail/u-boot/2011-September/102830.html for
+an example and a potential workaround.
+
+U-Boot still retains the ability to mount and access YAFFS partitions
+via CONFIG_YAFFS2.
+
+Signed-off-by: Peter Tyser <ptyser@xes-inc.com>
+---
+ common/cmd_nand.c            | 17 +---------
+ drivers/mtd/nand/nand_util.c | 77 +++++++-------------------------------------
+ include/configs/M54418TWR.h  |  1 -
+ include/configs/VCMA9.h      |  1 -
+ include/nand.h               |  7 ++--
+ 5 files changed, 15 insertions(+), 88 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index f9ced9d74c..0dcf71be28 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -697,17 +697,7 @@ static int do_nand(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+ 			}
+ 			ret = nand_write_skip_bad(nand, off, &rwsize, NULL,
+ 						maxsize, (u_char *)addr,
+-						WITH_DROP_FFS);
+-#endif
+-#ifdef CONFIG_CMD_NAND_YAFFS
+-		} else if (!strcmp(s, ".yaffs")) {
+-			if (read) {
+-				printf("Unknown nand command suffix '%s'.\n", s);
+-				return 1;
+-			}
+-			ret = nand_write_skip_bad(nand, off, &rwsize, NULL,
+-						maxsize, (u_char *)addr,
+-						WITH_YAFFS_OOB);
++						WITH_DROP_FFS | WITH_WR_VERIFY);
+ #endif
+ 		} else if (!strcmp(s, ".oob")) {
+ 			/* out-of-band data */
+@@ -851,11 +841,6 @@ static char nand_help_text[] =
+ 	"    'addr', skipping bad blocks and dropping any pages at the end\n"
+ 	"    of eraseblocks that contain only 0xFF\n"
+ #endif
+-#ifdef CONFIG_CMD_NAND_YAFFS
+-	"nand write.yaffs - addr off|partition size\n"
+-	"    write 'size' bytes starting at offset 'off' with yaffs format\n"
+-	"    from memory address 'addr', skipping bad blocks.\n"
+-#endif
+ 	"nand erase[.spread] [clean] off size - erase 'size' bytes "
+ 	"from offset 'off'\n"
+ 	"    With '.spread', erase enough for given file size, otherwise,\n"
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index f487756071..12dd26a33f 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -580,24 +580,7 @@ int nand_write_skip_bad(nand_info_t *nand, loff_t offset, size_t *length,
+ 	if (actual)
+ 		*actual = 0;
+ 
+-#ifdef CONFIG_CMD_NAND_YAFFS
+-	if (flags & WITH_YAFFS_OOB) {
+-		if (flags & (~WITH_YAFFS_OOB & ~WITH_WR_VERIFY))
+-			return -EINVAL;
+-
+-		int pages;
+-		pages = nand->erasesize / nand->writesize;
+-		blocksize = (pages * nand->oobsize) + nand->erasesize;
+-		if (*length % (nand->writesize + nand->oobsize)) {
+-			printf("Attempt to write incomplete page"
+-				" in yaffs mode\n");
+-			return -EINVAL;
+-		}
+-	} else
+-#endif
+-	{
+-		blocksize = nand->erasesize;
+-	}
++	blocksize = nand->erasesize;
+ 
+ 	/*
+ 	 * nand_write() handles unaligned, partial page writes.
+@@ -666,58 +649,22 @@ int nand_write_skip_bad(nand_info_t *nand, loff_t offset, size_t *length,
+ 		else
+ 			write_size = blocksize - block_offset;
+ 
+-#ifdef CONFIG_CMD_NAND_YAFFS
+-		if (flags & WITH_YAFFS_OOB) {
+-			int page, pages;
+-			size_t pagesize = nand->writesize;
+-			size_t pagesize_oob = pagesize + nand->oobsize;
+-			struct mtd_oob_ops ops;
+-
+-			ops.len = pagesize;
+-			ops.ooblen = nand->oobsize;
+-			ops.mode = MTD_OPS_AUTO_OOB;
+-			ops.ooboffs = 0;
+-
+-			pages = write_size / pagesize_oob;
+-			for (page = 0; page < pages; page++) {
+-				WATCHDOG_RESET();
+-
+-				ops.datbuf = p_buffer;
+-				ops.oobbuf = ops.datbuf + pagesize;
+-
+-				rval = mtd_write_oob(nand, offset, &ops);
+-
+-				if ((flags & WITH_WR_VERIFY) && !rval)
+-					rval = nand_verify_page_oob(nand,
+-							&ops, offset);
+-
+-				if (rval != 0)
+-					break;
+-
+-				offset += pagesize;
+-				p_buffer += pagesize_oob;
+-			}
+-		}
+-		else
+-#endif
+-		{
+-			truncated_write_size = write_size;
++		truncated_write_size = write_size;
+ #ifdef CONFIG_CMD_NAND_TRIMFFS
+-			if (flags & WITH_DROP_FFS)
+-				truncated_write_size = drop_ffs(nand, p_buffer,
+-						&write_size);
++		if (flags & WITH_DROP_FFS)
++			truncated_write_size = drop_ffs(nand, p_buffer,
++					&write_size);
+ #endif
+ 
+-			rval = nand_write(nand, offset, &truncated_write_size,
+-					p_buffer);
++		rval = nand_write(nand, offset, &truncated_write_size,
++				p_buffer);
+ 
+-			if ((flags & WITH_WR_VERIFY) && !rval)
+-				rval = nand_verify(nand, offset,
+-					truncated_write_size, p_buffer);
++		if ((flags & WITH_WR_VERIFY) && !rval)
++			rval = nand_verify(nand, offset,
++				truncated_write_size, p_buffer);
+ 
+-			offset += write_size;
+-			p_buffer += write_size;
+-		}
++		offset += write_size;
++		p_buffer += write_size;
+ 
+ 		if (rval != 0) {
+ 			printf("NAND write to offset %llx failed %d\n",
+diff --git a/include/configs/M54418TWR.h b/include/configs/M54418TWR.h
+index 3d7dc1fb2d..e107a2b073 100644
+--- a/include/configs/M54418TWR.h
++++ b/include/configs/M54418TWR.h
+@@ -55,7 +55,6 @@
+ #define CONFIG_CMD_MISC
+ #define CONFIG_CMD_MII
+ #undef CONFIG_CMD_NAND
+-#undef CONFIG_CMD_NAND_YAFFS
+ #define CONFIG_CMD_NET
+ #define CONFIG_CMD_NFS
+ #define CONFIG_CMD_PING
+diff --git a/include/configs/VCMA9.h b/include/configs/VCMA9.h
+index d40185e1e2..2da8771beb 100644
+--- a/include/configs/VCMA9.h
++++ b/include/configs/VCMA9.h
+@@ -61,7 +61,6 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_BSP
+ #define CONFIG_CMD_NAND
+-#define CONFIG_CMD_NAND_YAFFS
+ 
+ #define CONFIG_BOARD_LATE_INIT
+ 
+diff --git a/include/nand.h b/include/nand.h
+index 4d77801f4e..94abacc296 100644
+--- a/include/nand.h
++++ b/include/nand.h
+@@ -130,11 +130,8 @@ typedef struct nand_erase_options nand_erase_options_t;
+ int nand_read_skip_bad(nand_info_t *nand, loff_t offset, size_t *length,
+ 		       size_t *actual, loff_t lim, u_char *buffer);
+ 
+-#define WITH_YAFFS_OOB	(1 << 0) /* whether write with yaffs format. This flag
+-				  * is a 'mode' meaning it cannot be mixed with
+-				  * other flags */
+-#define WITH_DROP_FFS	(1 << 1) /* drop trailing all-0xff pages */
+-#define WITH_WR_VERIFY	(1 << 2) /* verify data was written correctly */
++#define WITH_DROP_FFS	(1 << 0) /* drop trailing all-0xff pages */
++#define WITH_WR_VERIFY	(1 << 1) /* verify data was written correctly */
+ 
+ int nand_write_skip_bad(nand_info_t *nand, loff_t offset, size_t *length,
+ 			size_t *actual, loff_t lim, u_char *buffer, int flags);
+-- 
+2.11.0
+

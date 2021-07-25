@@ -1,0 +1,37 @@
+From 4b388ff8f2c7f663680af8d4d769d79b13613571 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sun, 9 Feb 2014 01:09:07 +0100
+Subject: [PATCH 103/158] firmware: lantiq: add firmware for VRX200 internal
+ PHY's
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ firmware/Makefile                    |   4 ++++
+ firmware/lantiq/vrx200_phy11g_a1x.fw | Bin 0 -> 65536 bytes
+ firmware/lantiq/vrx200_phy11g_a2x.fw | Bin 0 -> 65536 bytes
+ firmware/lantiq/vrx200_phy22f_a1x.fw | Bin 0 -> 65536 bytes
+ firmware/lantiq/vrx200_phy22f_a2x.fw | Bin 0 -> 65536 bytes
+ 5 files changed, 4 insertions(+)
+ create mode 100644 firmware/lantiq/vrx200_phy11g_a1x.fw
+ create mode 100644 firmware/lantiq/vrx200_phy11g_a2x.fw
+ create mode 100644 firmware/lantiq/vrx200_phy22f_a1x.fw
+ create mode 100644 firmware/lantiq/vrx200_phy22f_a2x.fw
+
+diff --git a/firmware/Makefile b/firmware/Makefile
+index 79bede97f7..798cfbe3ec 100644
+--- a/firmware/Makefile
++++ b/firmware/Makefile
+@@ -3,6 +3,10 @@
+ #
+ 
+ #fw-shipped-$(CONFIG_XXX) += xxx/xxx.bin
++fw-shipped-$(CONFIG_FW_VRX200_PHY11G_A1X) += lantiq/vrx200_phy11g_a1x.fw
++fw-shipped-$(CONFIG_FW_VRX200_PHY11G_A2X) += lantiq/vrx200_phy11g_a2x.fw
++fw-shipped-$(CONFIG_FW_VRX200_PHY22F_A1X) += lantiq/vrx200_phy22f_a1x.fw
++fw-shipped-$(CONFIG_FW_VRX200_PHY22F_A2X) += lantiq/vrx200_phy22f_a2x.fw
+ 
+ fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
+ 
+-- 
+2.11.0
+

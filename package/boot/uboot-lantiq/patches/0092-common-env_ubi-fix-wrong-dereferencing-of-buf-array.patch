@@ -1,0 +1,26 @@
+From 79f64661913b208482b7fa8e85a6807daf9c3b1a Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 3 Jan 2017 00:25:45 +0100
+Subject: [PATCH 092/158] common/env_ubi: fix wrong dereferencing of buf array
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ common/env_ubi.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/env_ubi.c b/common/env_ubi.c
+index ef9c524505..6eae19716a 100644
+--- a/common/env_ubi.c
++++ b/common/env_ubi.c
+@@ -184,7 +184,7 @@ void env_relocate_spec(void)
+ 		return;
+ 	}
+ 
+-	if (ubi_volume_read(CONFIG_ENV_UBI_VOLUME, (void *)&buf,
++	if (ubi_volume_read(CONFIG_ENV_UBI_VOLUME, (void *)buf,
+ 			    CONFIG_ENV_SIZE)) {
+ 		printf("\n** Unable to read env from %s:%s **\n",
+ 		       CONFIG_ENV_UBI_PART, CONFIG_ENV_UBI_VOLUME);
+-- 
+2.11.0
+

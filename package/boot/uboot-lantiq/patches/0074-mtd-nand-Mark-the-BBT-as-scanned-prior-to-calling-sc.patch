@@ -1,0 +1,45 @@
+From 47f3fb33c414e675aa6d913b65bfa24b8513433a Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Date: Fri, 26 Dec 2014 22:20:57 +0900
+Subject: [PATCH 074/158] mtd: nand: Mark the BBT as scanned prior to calling
+ scan_bbt again
+
+Commit 35c204d8a9d0 (nand: reinstate lazy bad block scanning)
+broke NAND_BBT_USE_FLASH feature.
+
+Its git-log claimed that it reinstated the change as by commit
+fb49454b1b6c ("nand: reinstate lazy bad block scanning"), but it moved
+"chip->options |= NAND_BBT_SCANNED" below "chip->scan_bbt(mtd);".
+
+It causes recursion if scan_bbt does not find a flash based BBT
+and tries to write one, and the attempt to erase the BBT area
+causes a bad block check.
+
+Reinstate commit ff49ea8977b5 (NAND: Mark the BBT as scanned prior to
+calling scan_bbt.).
+
+Signed-off-by: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Cc: Rostislav Lisovy <lisovy@merica.cz>
+Cc: Heiko Schocher <hs@denx.de>
+Cc: Scott Wood <scottwood@freescale.com>
+---
+ drivers/mtd/nand/nand_base.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 21eb162c21..3242f1b403 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -638,8 +638,8 @@ static int nand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip,
+ 	struct nand_chip *chip = mtd->priv;
+ 
+ 	if (!(chip->options & NAND_BBT_SCANNED)) {
+-		chip->scan_bbt(mtd);
+ 		chip->options |= NAND_BBT_SCANNED;
++		chip->scan_bbt(mtd);
+ 	}
+ 
+ 	if (!chip->bbt)
+-- 
+2.11.0
+

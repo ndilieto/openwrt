@@ -1,0 +1,61 @@
+From d4ee593c6e792cec69d72a89df98f7f62e44f435 Mon Sep 17 00:00:00 2001
+From: Chris Packham <judge.packham@gmail.com>
+Date: Tue, 14 Jul 2015 22:54:41 +1200
+Subject: [PATCH 047/158] mips: Use unsigned int when reading c0 registers
+
+Commit 73a4152b2579c86f4401e0984c70eed7dd8cedfa upstream.
+
+In commit a18a477 (MIPS: use common code from lib/time.c) MIPS platforms
+started using common the common timer functions which are based around
+the fact that many platforms have a 32-bit free running counter register
+that can be used see commit 8dfafdd (Introduce common timer functions).
+
+Even MIPS64 has such a 32-bit register (some have an additional 64-bit free
+running counter, but that's something for another time).
+
+The problem is that in __read_32bit_c0_register() we read the value from
+this register into an _signed_ int and as it's returned up the call
+chain to timer_read_counter() it gets assigned to an unsigned long. On a
+32-bit system there is no problem. On a 64-bit system odd things happen,
+sign extension seems to kick in and all of a sudden if the counter
+register happens to have the MSb (i.e. the sign bit) set the negative
+int gets sign extended into a very large unsigned long value. This in
+turn throws out things from get_ticks() up.
+
+Update __read_32bit_c0_register() and __read_32bit_c0_ctrl_register() to
+use "unsigned int res;" instead of "int res;". There seems to be little
+reason to treat these register values as signed. They are either
+counters (which by definition are unsigned) or are made up of various
+bit fields to be interpreted as per the CPU datasheet.
+
+Reported-by: Sachin Surendran <sachin.surendran@alliedtelesis.co.nz>
+Signed-off-by: Chris Packham <judge.packham@gmail.com>
+---
+ arch/mips/include/asm/mipsregs.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/include/asm/mipsregs.h b/arch/mips/include/asm/mipsregs.h
+index 3571e4fdf2..c7a08499ff 100644
+--- a/arch/mips/include/asm/mipsregs.h
++++ b/arch/mips/include/asm/mipsregs.h
+@@ -594,7 +594,7 @@ do {								\
+  */
+ 
+ #define __read_32bit_c0_register(source, sel)				\
+-({ int __res;								\
++({ unsigned int __res;							\
+ 	if (sel == 0)							\
+ 		__asm__ __volatile__(					\
+ 			"mfc0\t%0, " #source "\n\t"			\
+@@ -676,7 +676,7 @@ do {									\
+  * On RM7000/RM9000 these are uses to access cop0 set 1 registers
+  */
+ #define __read_32bit_c0_ctrl_register(source)				\
+-({ int __res;								\
++({ unsigned int __res;							\
+ 	__asm__ __volatile__(						\
+ 		"cfc0\t%0, " #source "\n\t"				\
+ 		: "=r" (__res));					\
+-- 
+2.11.0
+

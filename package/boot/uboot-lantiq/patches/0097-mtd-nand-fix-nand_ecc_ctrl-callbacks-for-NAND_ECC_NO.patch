@@ -1,0 +1,42 @@
+From 913072a1dcce92f0b30c1681dcd7b90774c971fe Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 3 Jan 2017 00:26:21 +0100
+Subject: [PATCH 097/158] mtd: nand: fix nand_ecc_ctrl callbacks for
+ NAND_ECC_NONE
+
+Only read_page_raw(9 and write_page_raw() should be overwriteable
+by the NAND controller driver to be able to use HW acceleration like DMA.
+read_page() and write_page() should be handled internally only.
+The callback for read_page() depends on whether a NAND chip with on-die
+ECC has been detected. write_page() should always use the same callback
+as write_page_raw().
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/nand/nand_base.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index d1b5148042..619c6a09f9 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -4158,12 +4158,10 @@ int nand_scan_tail(struct mtd_info *mtd)
+ 			ecc->read_page_raw = nand_read_page_raw;
+ 		if (!ecc->write_page_raw)
+ 			ecc->write_page_raw = nand_write_page_raw;
+-		if (!ecc->write_page)
+-			ecc->write_page = nand_write_page_raw;
+-		if (!ecc->read_oob)
+-			ecc->read_oob = nand_read_oob_std;
+-		if (!ecc->write_oob)
+-			ecc->write_oob = nand_write_oob_std;
++
++		ecc->write_page = ecc->write_page_raw;
++		ecc->read_oob = nand_read_oob_std;
++		ecc->write_oob = nand_write_oob_std;
+ 
+ 		ecc->bytes = 0;
+ 		break;
+-- 
+2.11.0
+

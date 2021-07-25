@@ -1,0 +1,30 @@
+From d96a4003e1dc8189b4a011ba5508cd74374a8692 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sun, 16 Nov 2014 01:27:23 +0100
+Subject: [PATCH 028/158] MIPS: bootm: remove unused or redundant header files
+
+Commit 6cec63d59dc102e87077cd1d85f3c1b9cdcad239 upstream.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index f947fd6c9e..e0722d20d1 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -6,10 +6,7 @@
+  */
+ 
+ #include <common.h>
+-#include <command.h>
+ #include <image.h>
+-#include <u-boot/zlib.h>
+-#include <asm/byteorder.h>
+ #include <asm/addrspace.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+-- 
+2.11.0
+

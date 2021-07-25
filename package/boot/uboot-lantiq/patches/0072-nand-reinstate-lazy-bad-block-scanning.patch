@@ -1,0 +1,53 @@
+From 84f6aee580c3ed56029c670d1f484df37e57e0a7 Mon Sep 17 00:00:00 2001
+From: Rostislav Lisovy <lisovy@gmail.com>
+Date: Wed, 22 Oct 2014 13:40:44 +0200
+Subject: [PATCH 072/158] nand: reinstate lazy bad block scanning
+
+Commit ff94bc40af3481d47546595ba73c136de6af6929
+("mtd, ubi, ubifs: resync with Linux-3.14")
+accidentally reverted part of the commit
+13f0fd94e3cae6f8a0d9fba5d367e311edc8ebde
+("NAND: Scan bad blocks lazily.").
+
+Reinstate the change as by commit
+fb49454b1b6c7c6e238ac3c0b1e302e73eb1a1ea
+("nand: reinstate lazy bad block scanning")
+
+Signed-off-by: Rostislav Lisovy <lisovy@merica.cz>
+Acked-by: Heiko Schocher <hs@denx.de>
+---
+ drivers/mtd/nand/nand_base.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 085b1541cd..ff69513ee0 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -637,6 +637,11 @@ static int nand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip,
+ {
+ 	struct nand_chip *chip = mtd->priv;
+ 
++	if (!(chip->options & NAND_BBT_SCANNED)) {
++		chip->scan_bbt(mtd);
++		chip->options |= NAND_BBT_SCANNED;
++	}
++
+ 	if (!chip->bbt)
+ 		return chip->block_bad(mtd, ofs, getchip);
+ 
+@@ -4325,10 +4330,9 @@ int nand_scan_tail(struct mtd_info *mtd)
+ 
+ 	/* Check, if we should skip the bad block table scan */
+ 	if (chip->options & NAND_SKIP_BBTSCAN)
+-		return 0;
++		chip->options |= NAND_BBT_SCANNED;
+ 
+-	/* Build bad block table */
+-	return chip->scan_bbt(mtd);
++	return 0;
+ }
+ EXPORT_SYMBOL(nand_scan_tail);
+ 
+-- 
+2.11.0
+

@@ -1,13 +1,19 @@
-From da11da943487e2f724f25d409bcaa1f099637c0b Mon Sep 17 00:00:00 2001
+From 5460c024b13cc0a7863318d4018ec107b4fb8e01 Mon Sep 17 00:00:00 2001
 From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 Date: Sun, 13 Oct 2013 14:56:45 +0200
-Subject: sf: add slim probe funtions for SPL
+Subject: [PATCH 004/158] sf: add slim probe funtions for SPL
 
 Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/spi/sf_probe.c | 55 ++++++++++++++++++++++++++++++++++++++++++++++
+ include/spi_flash.h        |  3 +++
+ 2 files changed, 58 insertions(+)
 
+diff --git a/drivers/mtd/spi/sf_probe.c b/drivers/mtd/spi/sf_probe.c
+index 92bc419e57..9078b0f12a 100644
 --- a/drivers/mtd/spi/sf_probe.c
 +++ b/drivers/mtd/spi/sf_probe.c
-@@ -365,3 +365,58 @@ void spi_flash_free(struct spi_flash *fl
+@@ -391,3 +391,58 @@ void spi_flash_free(struct spi_flash *flash)
  	spi_free_slave(flash->spi);
  	free(flash);
  }
@@ -66,10 +72,12 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
 +	spi_free_slave(flash->spi);
 +}
 +#endif
+diff --git a/include/spi_flash.h b/include/spi_flash.h
+index 2db53c74c8..dc2629c8ed 100644
 --- a/include/spi_flash.h
 +++ b/include/spi_flash.h
-@@ -69,6 +69,9 @@ struct spi_flash *spi_flash_probe(unsign
- 		unsigned int max_hz, unsigned int spi_mode);
+@@ -139,6 +139,9 @@ struct spi_flash *spi_flash_probe_fdt(const void *blob, int slave_node,
+ 
  void spi_flash_free(struct spi_flash *flash);
  
 +int spl_spi_flash_probe(struct spi_flash *flash);
@@ -78,3 +86,6 @@ Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
  static inline int spi_flash_read(struct spi_flash *flash, u32 offset,
  		size_t len, void *buf)
  {
+-- 
+2.11.0
+

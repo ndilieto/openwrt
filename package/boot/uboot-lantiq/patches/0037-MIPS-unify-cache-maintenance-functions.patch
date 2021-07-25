@@ -1,0 +1,365 @@
+From 92b079b3ab52513f35e5c1cead2338d26e14c3b8 Mon Sep 17 00:00:00 2001
+From: Paul Burton <paul.burton@imgtec.com>
+Date: Thu, 29 Jan 2015 01:27:57 +0000
+Subject: [PATCH 037/158] MIPS: unify cache maintenance functions
+
+Commit 30374f98d14d5979f95a9d21d66346eaa9a795a1 upstream.
+
+Move the more developed mips32 version of the cache maintenance
+functions to a common arch/mips/lib/cache.c, in order to reduce
+duplication between mips32 & mips64.
+
+Signed-off-by: Paul Burton <paul.burton@imgtec.com>
+Cc: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/cpu.c | 109 -----------------------------------------
+ arch/mips/cpu/mips64/cpu.c |  58 ----------------------
+ arch/mips/lib/Makefile     |   1 +
+ arch/mips/lib/cache.c      | 118 +++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 119 insertions(+), 167 deletions(-)
+ create mode 100644 arch/mips/lib/cache.c
+
+diff --git a/arch/mips/cpu/mips32/cpu.c b/arch/mips/cpu/mips32/cpu.c
+index 1af909a9a5..8e1cc4e1fe 100644
+--- a/arch/mips/cpu/mips32/cpu.c
++++ b/arch/mips/cpu/mips32/cpu.c
+@@ -9,7 +9,6 @@
+ #include <command.h>
+ #include <netdev.h>
+ #include <asm/mipsregs.h>
+-#include <asm/cacheops.h>
+ #include <asm/reboot.h>
+ 
+ void __attribute__((weak)) _machine_restart(void)
+@@ -24,114 +23,6 @@ int do_reset(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_SYS_CACHELINE_SIZE
+-
+-static inline unsigned long icache_line_size(void)
+-{
+-	return CONFIG_SYS_CACHELINE_SIZE;
+-}
+-
+-static inline unsigned long dcache_line_size(void)
+-{
+-	return CONFIG_SYS_CACHELINE_SIZE;
+-}
+-
+-#else /* !CONFIG_SYS_CACHELINE_SIZE */
+-
+-static inline unsigned long icache_line_size(void)
+-{
+-	unsigned long conf1, il;
+-	conf1 = read_c0_config1();
+-	il = (conf1 & MIPS_CONF1_IL) >> MIPS_CONF1_IL_SHIFT;
+-	if (!il)
+-		return 0;
+-	return 2 << il;
+-}
+-
+-static inline unsigned long dcache_line_size(void)
+-{
+-	unsigned long conf1, dl;
+-	conf1 = read_c0_config1();
+-	dl = (conf1 & MIPS_CONF1_DL) >> MIPS_CONF1_DL_SHIFT;
+-	if (!dl)
+-		return 0;
+-	return 2 << dl;
+-}
+-
+-#endif /* !CONFIG_SYS_CACHELINE_SIZE */
+-
+-void flush_cache(ulong start_addr, ulong size)
+-{
+-	unsigned long ilsize = icache_line_size();
+-	unsigned long dlsize = dcache_line_size();
+-	const void *addr, *aend;
+-
+-	/* aend will be miscalculated when size is zero, so we return here */
+-	if (size == 0)
+-		return;
+-
+-	addr = (const void *)(start_addr & ~(dlsize - 1));
+-	aend = (const void *)((start_addr + size - 1) & ~(dlsize - 1));
+-
+-	if (ilsize == dlsize) {
+-		/* flush I-cache & D-cache simultaneously */
+-		while (1) {
+-			mips_cache(HIT_WRITEBACK_INV_D, addr);
+-			mips_cache(HIT_INVALIDATE_I, addr);
+-			if (addr == aend)
+-				break;
+-			addr += dlsize;
+-		}
+-		return;
+-	}
+-
+-	/* flush D-cache */
+-	while (1) {
+-		mips_cache(HIT_WRITEBACK_INV_D, addr);
+-		if (addr == aend)
+-			break;
+-		addr += dlsize;
+-	}
+-
+-	/* flush I-cache */
+-	addr = (const void *)(start_addr & ~(ilsize - 1));
+-	aend = (const void *)((start_addr + size - 1) & ~(ilsize - 1));
+-	while (1) {
+-		mips_cache(HIT_INVALIDATE_I, addr);
+-		if (addr == aend)
+-			break;
+-		addr += ilsize;
+-	}
+-}
+-
+-void flush_dcache_range(ulong start_addr, ulong stop)
+-{
+-	unsigned long lsize = dcache_line_size();
+-	const void *addr = (const void *)(start_addr & ~(lsize - 1));
+-	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
+-
+-	while (1) {
+-		mips_cache(HIT_WRITEBACK_INV_D, addr);
+-		if (addr == aend)
+-			break;
+-		addr += lsize;
+-	}
+-}
+-
+-void invalidate_dcache_range(ulong start_addr, ulong stop)
+-{
+-	unsigned long lsize = dcache_line_size();
+-	const void *addr = (const void *)(start_addr & ~(lsize - 1));
+-	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
+-
+-	while (1) {
+-		mips_cache(HIT_INVALIDATE_D, addr);
+-		if (addr == aend)
+-			break;
+-		addr += lsize;
+-	}
+-}
+-
+ void write_one_tlb(int index, u32 pagemask, u32 hi, u32 low0, u32 low1)
+ {
+ 	write_c0_entrylo0(low0);
+diff --git a/arch/mips/cpu/mips64/cpu.c b/arch/mips/cpu/mips64/cpu.c
+index 9f45cfca5d..1d32705b74 100644
+--- a/arch/mips/cpu/mips64/cpu.c
++++ b/arch/mips/cpu/mips64/cpu.c
+@@ -9,19 +9,8 @@
+ #include <command.h>
+ #include <netdev.h>
+ #include <asm/mipsregs.h>
+-#include <asm/cacheops.h>
+ #include <asm/reboot.h>
+ 
+-#define cache_op(op, addr)						\
+-	__asm__ __volatile__(						\
+-	"	.set	push\n"						\
+-	"	.set	noreorder\n"					\
+-	"	.set	mips64\n"					\
+-	"	cache	%0, %1\n"					\
+-	"	.set	pop\n"						\
+-	:								\
+-	: "i" (op), "R" (*(unsigned char *)(addr)))
+-
+ void __attribute__((weak)) _machine_restart(void)
+ {
+ 	fprintf(stderr, "*** reset failed ***\n");
+@@ -37,53 +26,6 @@ int do_reset(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+ 	return 0;
+ }
+ 
+-void flush_cache(ulong start_addr, ulong size)
+-{
+-	unsigned long lsize = CONFIG_SYS_CACHELINE_SIZE;
+-	unsigned long addr = start_addr & ~(lsize - 1);
+-	unsigned long aend = (start_addr + size - 1) & ~(lsize - 1);
+-
+-	/* aend will be miscalculated when size is zero, so we return here */
+-	if (size == 0)
+-		return;
+-
+-	while (1) {
+-		cache_op(HIT_WRITEBACK_INV_D, addr);
+-		cache_op(HIT_INVALIDATE_I, addr);
+-		if (addr == aend)
+-			break;
+-		addr += lsize;
+-	}
+-}
+-
+-void flush_dcache_range(ulong start_addr, ulong stop)
+-{
+-	unsigned long lsize = CONFIG_SYS_CACHELINE_SIZE;
+-	unsigned long addr = start_addr & ~(lsize - 1);
+-	unsigned long aend = (stop - 1) & ~(lsize - 1);
+-
+-	while (1) {
+-		cache_op(HIT_WRITEBACK_INV_D, addr);
+-		if (addr == aend)
+-			break;
+-		addr += lsize;
+-	}
+-}
+-
+-void invalidate_dcache_range(ulong start_addr, ulong stop)
+-{
+-	unsigned long lsize = CONFIG_SYS_CACHELINE_SIZE;
+-	unsigned long addr = start_addr & ~(lsize - 1);
+-	unsigned long aend = (stop - 1) & ~(lsize - 1);
+-
+-	while (1) {
+-		cache_op(HIT_INVALIDATE_D, addr);
+-		if (addr == aend)
+-			break;
+-		addr += lsize;
+-	}
+-}
+-
+ void write_one_tlb(int index, u32 pagemask, u32 hi, u32 low0, u32 low1)
+ {
+ 	write_c0_entrylo0(low0);
+diff --git a/arch/mips/lib/Makefile b/arch/mips/lib/Makefile
+index e483e86f6b..d9bdc95b9c 100644
+--- a/arch/mips/lib/Makefile
++++ b/arch/mips/lib/Makefile
+@@ -8,6 +8,7 @@
+ ifndef CONFIG_SYS_GENERIC_BOARD
+ obj-y	+= board.o
+ endif
++obj-y	+= cache.o
+ obj-y	+= io.o
+ 
+ obj-$(CONFIG_CMD_BOOTM) += bootm.o
+diff --git a/arch/mips/lib/cache.c b/arch/mips/lib/cache.c
+new file mode 100644
+index 0000000000..e245614d16
+--- /dev/null
++++ b/arch/mips/lib/cache.c
+@@ -0,0 +1,118 @@
++/*
++ * (C) Copyright 2003
++ * Wolfgang Denk, DENX Software Engineering, <wd@denx.de>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/cacheops.h>
++#include <asm/mipsregs.h>
++
++#ifdef CONFIG_SYS_CACHELINE_SIZE
++
++static inline unsigned long icache_line_size(void)
++{
++	return CONFIG_SYS_CACHELINE_SIZE;
++}
++
++static inline unsigned long dcache_line_size(void)
++{
++	return CONFIG_SYS_CACHELINE_SIZE;
++}
++
++#else /* !CONFIG_SYS_CACHELINE_SIZE */
++
++static inline unsigned long icache_line_size(void)
++{
++	unsigned long conf1, il;
++	conf1 = read_c0_config1();
++	il = (conf1 & MIPS_CONF1_IL) >> MIPS_CONF1_IL_SHIFT;
++	if (!il)
++		return 0;
++	return 2 << il;
++}
++
++static inline unsigned long dcache_line_size(void)
++{
++	unsigned long conf1, dl;
++	conf1 = read_c0_config1();
++	dl = (conf1 & MIPS_CONF1_DL) >> MIPS_CONF1_DL_SHIFT;
++	if (!dl)
++		return 0;
++	return 2 << dl;
++}
++
++#endif /* !CONFIG_SYS_CACHELINE_SIZE */
++
++void flush_cache(ulong start_addr, ulong size)
++{
++	unsigned long ilsize = icache_line_size();
++	unsigned long dlsize = dcache_line_size();
++	const void *addr, *aend;
++
++	/* aend will be miscalculated when size is zero, so we return here */
++	if (size == 0)
++		return;
++
++	addr = (const void *)(start_addr & ~(dlsize - 1));
++	aend = (const void *)((start_addr + size - 1) & ~(dlsize - 1));
++
++	if (ilsize == dlsize) {
++		/* flush I-cache & D-cache simultaneously */
++		while (1) {
++			mips_cache(HIT_WRITEBACK_INV_D, addr);
++			mips_cache(HIT_INVALIDATE_I, addr);
++			if (addr == aend)
++				break;
++			addr += dlsize;
++		}
++		return;
++	}
++
++	/* flush D-cache */
++	while (1) {
++		mips_cache(HIT_WRITEBACK_INV_D, addr);
++		if (addr == aend)
++			break;
++		addr += dlsize;
++	}
++
++	/* flush I-cache */
++	addr = (const void *)(start_addr & ~(ilsize - 1));
++	aend = (const void *)((start_addr + size - 1) & ~(ilsize - 1));
++	while (1) {
++		mips_cache(HIT_INVALIDATE_I, addr);
++		if (addr == aend)
++			break;
++		addr += ilsize;
++	}
++}
++
++void flush_dcache_range(ulong start_addr, ulong stop)
++{
++	unsigned long lsize = dcache_line_size();
++	const void *addr = (const void *)(start_addr & ~(lsize - 1));
++	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
++
++	while (1) {
++		mips_cache(HIT_WRITEBACK_INV_D, addr);
++		if (addr == aend)
++			break;
++		addr += lsize;
++	}
++}
++
++void invalidate_dcache_range(ulong start_addr, ulong stop)
++{
++	unsigned long lsize = dcache_line_size();
++	const void *addr = (const void *)(start_addr & ~(lsize - 1));
++	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
++
++	while (1) {
++		mips_cache(HIT_INVALIDATE_D, addr);
++		if (addr == aend)
++			break;
++		addr += lsize;
++	}
++}
+-- 
+2.11.0
+

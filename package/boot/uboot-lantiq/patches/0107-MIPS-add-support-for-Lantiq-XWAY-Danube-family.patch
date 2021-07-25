@@ -1,0 +1,1164 @@
+From 81353e067201ab53bc4615cb52b0118a11da4871 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:22:36 +0100
+Subject: [PATCH 107/158] MIPS: add support for Lantiq XWAY Danube family
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/danube/Makefile       |   8 ++
+ arch/mips/cpu/mips32/danube/cgu.c          | 117 +++++++++++++++++++++
+ arch/mips/cpu/mips32/danube/cgu_init.S     | 142 ++++++++++++++++++++++++++
+ arch/mips/cpu/mips32/danube/chipid.c       |  59 +++++++++++
+ arch/mips/cpu/mips32/danube/config.mk      |  22 ++++
+ arch/mips/cpu/mips32/danube/ebu.c          | 105 +++++++++++++++++++
+ arch/mips/cpu/mips32/danube/mem.c          |  30 ++++++
+ arch/mips/cpu/mips32/danube/mem_init.S     | 114 +++++++++++++++++++++
+ arch/mips/cpu/mips32/danube/pmu.c          | 117 +++++++++++++++++++++
+ arch/mips/cpu/mips32/danube/rcu.c          | 125 +++++++++++++++++++++++
+ arch/mips/include/asm/arch-danube/config.h | 159 +++++++++++++++++++++++++++++
+ arch/mips/include/asm/arch-danube/gpio.h   |  12 +++
+ arch/mips/include/asm/arch-danube/soc.h    |  38 +++++++
+ 13 files changed, 1048 insertions(+)
+ create mode 100644 arch/mips/cpu/mips32/danube/Makefile
+ create mode 100644 arch/mips/cpu/mips32/danube/cgu.c
+ create mode 100644 arch/mips/cpu/mips32/danube/cgu_init.S
+ create mode 100644 arch/mips/cpu/mips32/danube/chipid.c
+ create mode 100644 arch/mips/cpu/mips32/danube/config.mk
+ create mode 100644 arch/mips/cpu/mips32/danube/ebu.c
+ create mode 100644 arch/mips/cpu/mips32/danube/mem.c
+ create mode 100644 arch/mips/cpu/mips32/danube/mem_init.S
+ create mode 100644 arch/mips/cpu/mips32/danube/pmu.c
+ create mode 100644 arch/mips/cpu/mips32/danube/rcu.c
+ create mode 100644 arch/mips/include/asm/arch-danube/config.h
+ create mode 100644 arch/mips/include/asm/arch-danube/gpio.h
+ create mode 100644 arch/mips/include/asm/arch-danube/soc.h
+
+diff --git a/arch/mips/cpu/mips32/danube/Makefile b/arch/mips/cpu/mips32/danube/Makefile
+new file mode 100644
+index 0000000000..e85292f088
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/Makefile
+@@ -0,0 +1,8 @@
++#
++# Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-y	+= cgu.o chipid.o ebu.o mem.o pmu.o rcu.o
++obj-y	+= cgu_init.o mem_init.o
+diff --git a/arch/mips/cpu/mips32/danube/cgu.c b/arch/mips/cpu/mips32/danube/cgu.c
+new file mode 100644
+index 0000000000..4fd110aa8e
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/cgu.c
+@@ -0,0 +1,117 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/lantiq/clk.h>
++#include <asm/lantiq/io.h>
++
++#define LTQ_CGU_SYS_DDR_MASK		0x0003
++#define LTQ_CGU_SYS_DDR_SHIFT		0
++#define LTQ_CGU_SYS_CPU0_MASK		0x000C
++#define LTQ_CGU_SYS_CPU0_SHIFT		2
++#define LTQ_CGU_SYS_FPI_MASK		0x0040
++#define LTQ_CGU_SYS_FPI_SHIFT		6
++
++struct ltq_cgu_regs {
++	u32	rsvd0;
++	u32	pll0_cfg;	/* PLL0 config */
++	u32	pll1_cfg;	/* PLL1 config */
++	u32	pll2_cfg;	/* PLL2 config */
++	u32	sys;		/* System clock */
++	u32	update;		/* CGU update control */
++	u32	if_clk;		/* Interface clock */
++	u32	osc_con;	/* Update OSC Control */
++	u32	smd;		/* SDRAM Memory Control */
++	u32	rsvd1[3];
++	u32	pcm_cr;		/* PCM control */
++	u32	pci_cr;		/* PCI clock control */
++};
++
++static struct ltq_cgu_regs *ltq_cgu_regs =
++	(struct ltq_cgu_regs *) CKSEG1ADDR(LTQ_CGU_BASE);
++
++static inline u32 ltq_cgu_sys_readl(u32 mask, u32 shift)
++{
++	return (ltq_readl(&ltq_cgu_regs->sys) & mask) >> shift;
++}
++
++unsigned long ltq_get_io_region_clock(void)
++{
++	u32 ddr_sel;
++	unsigned long clk;
++
++	ddr_sel = ltq_cgu_sys_readl(LTQ_CGU_SYS_DDR_MASK,
++					LTQ_CGU_SYS_DDR_SHIFT);
++
++	switch (ddr_sel) {
++	case 0:
++		clk = CLOCK_166_MHZ;
++		break;
++	case 1:
++		clk = CLOCK_133_MHZ;
++		break;
++	case 2:
++		clk = CLOCK_111_MHZ;
++		break;
++	case 3:
++		clk = CLOCK_83_MHZ;
++		break;
++	default:
++		clk = 0;
++		break;
++	}
++
++	return clk;
++}
++
++unsigned long ltq_get_cpu_clock(void)
++{
++	u32 cpu0_sel;
++	unsigned long clk;
++
++	cpu0_sel = ltq_cgu_sys_readl(LTQ_CGU_SYS_CPU0_MASK,
++					LTQ_CGU_SYS_CPU0_SHIFT);
++
++	switch (cpu0_sel) {
++		/* Same as PLL0 output (333,33 MHz) */
++	case 0:
++		clk = CLOCK_333_MHZ;
++		break;
++		/* 1/1 fixed ratio to DDR clock */
++	case 1:
++		clk = ltq_get_io_region_clock();
++		break;
++		/* 1/2 fixed ratio to DDR clock */
++	case 2:
++		clk = ltq_get_io_region_clock() << 1;
++		break;
++	default:
++		clk = 0;
++		break;
++	}
++
++	return clk;
++}
++
++unsigned long ltq_get_bus_clock(void)
++{
++	u32 fpi_sel;
++	unsigned long clk;
++
++	fpi_sel = ltq_cgu_sys_readl(LTQ_CGU_SYS_FPI_MASK,
++					LTQ_CGU_SYS_FPI_SHIFT);
++
++	if (fpi_sel)
++		/* Half the DDR clock */
++		clk = ltq_get_io_region_clock() >> 1;
++	else
++		/* Same as DDR clock */
++		clk = ltq_get_io_region_clock();
++
++	return clk;
++}
+diff --git a/arch/mips/cpu/mips32/danube/cgu_init.S b/arch/mips/cpu/mips32/danube/cgu_init.S
+new file mode 100644
+index 0000000000..e0922f1fd1
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/cgu_init.S
+@@ -0,0 +1,142 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <config.h>
++#include <asm/asm.h>
++#include <asm/regdef.h>
++#include <asm/addrspace.h>
++#include <asm/arch/soc.h>
++
++/* RCU module register */
++#define LTQ_RCU_RST_REQ			0x0010
++#define LTQ_RCU_RST_STAT		0x0014
++#define LTQ_RCU_RST_REQ_VALUE		0x40000008
++#define LTQ_RCU_RST_STAT_XTAL_F	0x20000
++
++/* CGU module register */
++#define LTQ_CGU_PLL0_CFG		0x0004	/* PLL0 config */
++#define LTQ_CGU_PLL1_CFG		0x0008	/* PLL1 config */
++#define LTQ_CGU_PLL2_CFG		0x000C	/* PLL2 config */
++#define LTQ_CGU_SYS			0x0010	/* System clock */
++
++/* Valid SYS.CPU0/1 values */
++#define LTQ_CGU_SYS_CPU0_SHIFT		2
++#define LTQ_CGU_SYS_CPU1_SHIFT		4
++#define LTQ_CGU_SYS_CPU_PLL0		0x0
++#define LTQ_CGU_SYS_CPU_DDR_EQUAL	0x1
++#define LTQ_CGU_SYS_CPU_DDR_TWICE	0x2
++
++/* Valid SYS.DDR values */
++#define LTQ_CGU_SYS_DDR_SHIFT		0
++#define LTQ_CGU_SYS_DDR_167_MHZ	0x0
++#define LTQ_CGU_SYS_DDR_133_MHZ	0x1
++#define LTQ_CGU_SYS_DDR_111_MHZ	0x2
++#define LTQ_CGU_SYS_DDR_83_MHZ		0x3
++
++/* Valid SYS.FPI values */
++#define LTQ_CGU_SYS_FPI_SHIFT		6
++#define LTQ_CGU_SYS_FPI_DDR_EQUAL	0x0
++#define LTQ_CGU_SYS_FPI_DDR_HALF	0x1
++
++/* Valid SYS.PPE values */
++#define LTQ_CGU_SYS_PPE_SHIFT		7
++#define LTQ_CGU_SYS_PPE_266_MHZ	0x0
++#define LTQ_CGU_SYS_PPE_240_MHZ	0x1
++#define LTQ_CGU_SYS_PPE_222_MHZ	0x2
++#define LTQ_CGU_SYS_PPE_133_MHZ	0x3
++
++#if (CONFIG_SYS_CLOCK_MODE == LTQ_CLK_CPU_333_DDR_167)
++#define LTQ_CGU_SYS_CPU_CONFIG		LTQ_CGU_SYS_CPU_DDR_TWICE
++#define LTQ_CGU_SYS_DDR_CONFIG		LTQ_CGU_SYS_DDR_167_MHZ
++#define LTQ_CGU_SYS_FPI_CONFIG		LTQ_CGU_SYS_FPI_DDR_HALF
++#define LTQ_CGU_SYS_PPE_CONFIG		LTQ_CGU_SYS_PPE_266_MHZ
++#elif (CONFIG_SYS_CLOCK_MODE == LTQ_CLK_CPU_111_DDR_111)
++#define LTQ_CGU_SYS_CPU_CONFIG		LTQ_CGU_SYS_CPU_DDR_EQUAL
++#define LTQ_CGU_SYS_DDR_CONFIG		LTQ_CGU_SYS_DDR_111_MHZ
++#define LTQ_CGU_SYS_FPI_CONFIG		LTQ_CGU_SYS_FPI_DDR_HALF
++#define LTQ_CGU_SYS_PPE_CONFIG		LTQ_CGU_SYS_PPE_133_MHZ
++#else
++#error "Invalid system clock configuration!"
++#endif
++
++/* Build register values */
++#define LTQ_CGU_SYS_VALUE	((LTQ_CGU_SYS_PPE_CONFIG << \
++					LTQ_CGU_SYS_PPE_SHIFT) | \
++				(LTQ_CGU_SYS_FPI_CONFIG << \
++					LTQ_CGU_SYS_FPI_SHIFT) | \
++				(LTQ_CGU_SYS_CPU_CONFIG << \
++					LTQ_CGU_SYS_CPU1_SHIFT) | \
++				(LTQ_CGU_SYS_CPU_CONFIG << \
++					LTQ_CGU_SYS_CPU0_SHIFT) | \
++				LTQ_CGU_SYS_DDR_CONFIG)
++
++/* Reset values for PLL registers for usage with 35.328 MHz crystal */
++#define PLL0_35MHZ_CONFIG	0x9D861059
++#define PLL1_35MHZ_CONFIG	0x1A260CD9
++#define PLL2_35MHZ_CONFIG	0x8000f1e5
++
++/* Reset values for PLL registers for usage with 36 MHz crystal */
++#define PLL0_36MHZ_CONFIG	0x1000125D
++#define PLL1_36MHZ_CONFIG	0x1B1E0C99
++#define PLL2_36MHZ_CONFIG	0x8002f2a1
++
++LEAF(ltq_cgu_init)
++	/* Load current CGU register value */
++	li	t0, (LTQ_CGU_BASE | KSEG1)
++	lw	t1, LTQ_CGU_SYS(t0)
++
++	/* Load target CGU register values */
++	li	t3, LTQ_CGU_SYS_VALUE
++
++	/* Only update registers if values differ */
++	beq	t1, t3, finished
++
++	/*
++	 * Check whether the XTAL_F bit in RST_STAT register is set or not.
++	 * This bit is latched in via pin strapping. If bit is set then
++	 * clock source is a 36 MHz crystal. Otherwise a 35.328 MHz crystal.
++	 */
++	 li	t1, (LTQ_RCU_BASE | KSEG1)
++	 lw	t2, LTQ_RCU_RST_STAT(t1)
++	 and	t2, t2, LTQ_RCU_RST_STAT_XTAL_F
++	 beq	t2, LTQ_RCU_RST_STAT_XTAL_F, boot_36mhz
++
++boot_35mhz:
++	/* Configure PLL for 35.328 MHz */
++	li	t2, PLL0_35MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL0_CFG(t0)
++	li	t2, PLL1_35MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL1_CFG(t0)
++	li	t2, PLL2_35MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL2_CFG(t0)
++
++	b	do_reset
++
++boot_36mhz:
++	/* Configure PLL for 36 MHz */
++	li	t2, PLL0_36MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL0_CFG(t0)
++	li	t2, PLL1_36MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL1_CFG(t0)
++	li	t2, PLL2_36MHZ_CONFIG
++	sw	t2, LTQ_CGU_PLL2_CFG(t0)
++
++do_reset:
++	/* Store new clock config */
++	sw	t3, LTQ_CGU_SYS(t0)
++
++	/* Perform software reset to activate new clock config */
++	li	t2, LTQ_RCU_RST_REQ_VALUE
++	sw	t2, LTQ_RCU_RST_REQ(t1)
++
++wait_reset:
++	b	wait_reset
++
++finished:
++	jr	ra
++
++	END(ltq_cgu_init)
+diff --git a/arch/mips/cpu/mips32/danube/chipid.c b/arch/mips/cpu/mips32/danube/chipid.c
+new file mode 100644
+index 0000000000..02d9554804
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/chipid.c
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/chipid.h>
++#include <asm/arch/soc.h>
++
++#define LTQ_CHIPID_VERSION_SHIFT	28
++#define LTQ_CHIPID_VERSION_MASK		(0xF << LTQ_CHIPID_VERSION_SHIFT)
++#define LTQ_CHIPID_PNUM_SHIFT		12
++#define LTQ_CHIPID_PNUM_MASK		(0xFFFF << LTQ_CHIPID_PNUM_SHIFT)
++
++struct ltq_chipid_regs {
++	u32	manid;		/* Manufacturer identification */
++	u32	chipid;		/* Chip identification */
++};
++
++static struct ltq_chipid_regs *ltq_chipid_regs =
++	(struct ltq_chipid_regs *) CKSEG1ADDR(LTQ_CHIPID_BASE);
++
++unsigned int ltq_chip_version_get(void)
++{
++	u32 chipid;
++
++	chipid = ltq_readl(&ltq_chipid_regs->chipid);
++
++	return (chipid & LTQ_CHIPID_VERSION_MASK) >> LTQ_CHIPID_VERSION_SHIFT;
++}
++
++unsigned int ltq_chip_partnum_get(void)
++{
++	u32 chipid;
++
++	chipid = ltq_readl(&ltq_chipid_regs->chipid);
++
++	return (chipid & LTQ_CHIPID_PNUM_MASK) >> LTQ_CHIPID_PNUM_SHIFT;
++}
++
++const char *ltq_chip_partnum_str(void)
++{
++	enum ltq_chip_partnum partnum = ltq_chip_partnum_get();
++
++	switch (partnum) {
++	case LTQ_SOC_DANUBE:
++		return "Danube";
++	case LTQ_SOC_DANUBE_S:
++		return "Danube-S";
++	case LTQ_SOC_TWINPASS:
++		return "Twinpass";
++	default:
++		printf("Unknown partnum: %x\n", partnum);
++	}
++
++	return "";
++}
+diff --git a/arch/mips/cpu/mips32/danube/config.mk b/arch/mips/cpu/mips32/danube/config.mk
+new file mode 100644
+index 0000000000..ba47a5c26f
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/config.mk
+@@ -0,0 +1,22 @@
++#
++# Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++PF_CPPFLAGS_DANUBE := $(call cc-option,-mtune=24kec,)
++PLATFORM_CPPFLAGS += $(PF_CPPFLAGS_DANUBE)
++
++libs-y += $(CPUDIR)/lantiq-common/
++
++ifndef CONFIG_SPL_BUILD
++ifdef CONFIG_SYS_BOOT_SFSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.sfspl
++endif
++ifdef CONFIG_SYS_BOOT_NORSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.norspl
++endif
++ifdef CONFIG_SYS_BOOT_NANDSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.nandspl
++endif
++endif
+diff --git a/arch/mips/cpu/mips32/danube/ebu.c b/arch/mips/cpu/mips32/danube/ebu.c
+new file mode 100644
+index 0000000000..902f6a7a97
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/ebu.c
+@@ -0,0 +1,105 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/lantiq/io.h>
++
++#define EBU_ADDRSEL_MASK(mask)		((mask & 0xf) << 4)
++#define EBU_ADDRSEL_REGEN		(1 << 0)
++
++#define EBU_CON_WRDIS			(1 << 31)
++#define EBU_CON_AGEN_DEMUX		(0x0 << 24)
++#define EBU_CON_AGEN_MUX		(0x2 << 24)
++#define EBU_CON_SETUP			(1 << 22)
++#define EBU_CON_WAIT_DIS		(0x0 << 20)
++#define EBU_CON_WAIT_ASYNC		(0x1 << 20)
++#define EBU_CON_WAIT_SYNC		(0x2 << 20)
++#define EBU_CON_WINV			(1 << 19)
++#define EBU_CON_PW_8BIT			(0x0 << 16)
++#define EBU_CON_PW_16BIT		(0x1 << 16)
++#define EBU_CON_ALEC(cycles)		((cycles & 0x3) << 14)
++#define EBU_CON_BCGEN_CS		(0x0 << 12)
++#define EBU_CON_BCGEN_INTEL		(0x1 << 12)
++#define EBU_CON_BCGEN_MOTOROLA		(0x2 << 12)
++#define EBU_CON_WAITWRC(cycles)		((cycles & 0x7) << 8)
++#define EBU_CON_WAITRDC(cycles)		((cycles & 0x3) << 6)
++#define EBU_CON_HOLDC(cycles)		((cycles & 0x3) << 4)
++#define EBU_CON_RECOVC(cycles)		((cycles & 0x3) << 2)
++#define EBU_CON_CMULT_1			0x0
++#define EBU_CON_CMULT_4			0x1
++#define EBU_CON_CMULT_8			0x2
++#define EBU_CON_CMULT_16		0x3
++
++#if defined(CONFIG_LTQ_SUPPORT_NOR_FLASH)
++#define ebu_region0_enable		1
++#else
++#define ebu_region0_enable		0
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_NAND_FLASH)
++#define ebu_region1_enable		1
++#else
++#define ebu_region1_enable		0
++#endif
++
++struct ltq_ebu_regs {
++	u32	clc;
++	u32	rsvd0[3];
++	u32	con;
++	u32	rsvd1[3];
++	u32	addr_sel_0;
++	u32	addr_sel_1;
++	u32	rsvd2[14];
++	u32	con_0;
++	u32	con_1;
++};
++
++static struct ltq_ebu_regs *ltq_ebu_regs =
++	(struct ltq_ebu_regs *) CKSEG1ADDR(LTQ_EBU_BASE);
++
++void ltq_ebu_init(void)
++{
++	if (ebu_region0_enable) {
++		/*
++		 * Map EBU region 0 to range 0x10000000-0x13ffffff and enable
++		 * region control. This supports up to 32 MiB NOR flash in
++		 * bank 0.
++		 */
++		ltq_writel(&ltq_ebu_regs->addr_sel_0, LTQ_EBU_REGION0_BASE |
++			EBU_ADDRSEL_MASK(1) | EBU_ADDRSEL_REGEN);
++
++		ltq_writel(&ltq_ebu_regs->con_0, EBU_CON_AGEN_DEMUX |
++			EBU_CON_WAIT_DIS | EBU_CON_PW_16BIT |
++			EBU_CON_ALEC(3) | EBU_CON_BCGEN_INTEL |
++			EBU_CON_WAITWRC(7) | EBU_CON_WAITRDC(3) |
++			EBU_CON_HOLDC(3) | EBU_CON_RECOVC(3) |
++			EBU_CON_CMULT_16);
++	} else
++		ltq_clrbits(&ltq_ebu_regs->addr_sel_0, EBU_ADDRSEL_REGEN);
++
++	if (ebu_region1_enable) {
++		/*
++		 * Map EBU region 1 to range 0x14000000-0x13ffffff and enable
++		 * region control. This supports NAND flash in bank 1.
++		 */
++		ltq_writel(&ltq_ebu_regs->addr_sel_1, LTQ_EBU_REGION1_BASE |
++			EBU_ADDRSEL_MASK(3) | EBU_ADDRSEL_REGEN);
++
++		ltq_writel(&ltq_ebu_regs->con_1, EBU_CON_AGEN_DEMUX |
++			EBU_CON_SETUP | EBU_CON_WAIT_DIS | EBU_CON_PW_8BIT |
++			EBU_CON_ALEC(3) | EBU_CON_BCGEN_INTEL |
++			EBU_CON_WAITWRC(2) | EBU_CON_WAITRDC(2) |
++			EBU_CON_HOLDC(1) | EBU_CON_RECOVC(1) |
++			EBU_CON_CMULT_4);
++	} else
++		ltq_clrbits(&ltq_ebu_regs->addr_sel_1, EBU_ADDRSEL_REGEN);
++}
++
++void *flash_swap_addr(unsigned long addr)
++{
++	return (void *)(addr ^ 2);
++}
+diff --git a/arch/mips/cpu/mips32/danube/mem.c b/arch/mips/cpu/mips32/danube/mem.c
+new file mode 100644
+index 0000000000..be1922c17c
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/mem.c
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/lantiq/io.h>
++
++static void *ltq_mc_ddr_base = (void *) CKSEG1ADDR(LTQ_MC_DDR_BASE);
++
++static inline u32 ltq_mc_dc_read(u32 index)
++{
++	return ltq_readl(ltq_mc_ddr_base + LTQ_MC_DDR_DC_OFFSET(index));
++}
++
++phys_size_t initdram(int board_type)
++{
++	u32 col, row, dc04, dc19, dc20;
++
++	dc04 = ltq_mc_dc_read(4);
++	dc19 = ltq_mc_dc_read(19);
++	dc20 = ltq_mc_dc_read(20);
++
++	row = (dc04 & 0xF) - ((dc19 & 0x700) >> 8);
++	col = ((dc04 & 0xF00) >> 8) - (dc20 & 0x7);
++
++	return (1 << (row + col)) * 4 * 2;
++}
+diff --git a/arch/mips/cpu/mips32/danube/mem_init.S b/arch/mips/cpu/mips32/danube/mem_init.S
+new file mode 100644
+index 0000000000..47a35e1946
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/mem_init.S
+@@ -0,0 +1,114 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <config.h>
++#include <asm/asm.h>
++#include <asm/regdef.h>
++#include <asm/addrspace.h>
++#include <asm/arch/soc.h>
++
++/* Must be configured in BOARDDIR */
++#include <ddr_settings.h>
++
++#define LTQ_MC_GEN_ERRCAUSE		0x0010
++#define LTQ_MC_GEN_ERRADDR		0x0020
++#define LTQ_MC_GEN_CON			0x0060
++#define LTQ_MC_GEN_STAT			0x0070
++#define LTQ_MC_GEN_CON_SRAM_DDR_ENABLE	0x5
++#define LTQ_MC_GEN_STAT_DLCK_PWRON	0xC
++
++#define LTQ_MC_DDR_DC03_MC_START	0x100
++
++	/* Store given value in MC DDR CCRx register */
++	.macro dc_sw num, val
++	li	t2, \val
++	sw	t2, LTQ_MC_DDR_DC_OFFSET(\num)(t1)
++	.endm
++
++LEAF(ltq_mem_init)
++	/* Load MC General and MC DDR module base */
++	li	t0, (LTQ_MC_GEN_BASE | KSEG1)
++	li	t1, (LTQ_MC_DDR_BASE | KSEG1)
++
++	/* Clear access error log registers */
++	sw	zero, LTQ_MC_GEN_ERRCAUSE(t0)
++	sw	zero, LTQ_MC_GEN_ERRADDR(t0)
++
++	/* Enable DDR and SRAM module in memory controller */
++	li	t2, LTQ_MC_GEN_CON_SRAM_DDR_ENABLE
++	sw	t2, LTQ_MC_GEN_CON(t0)
++
++	/* Clear start bit of DDR memory controller */
++	sw	zero, LTQ_MC_DDR_DC_OFFSET(3)(t1)
++
++	/* Init memory controller registers with values ddr_settings.h */
++	dc_sw	0, MC_DC00_VALUE
++	dc_sw	1, MC_DC01_VALUE
++	dc_sw	2, MC_DC02_VALUE
++	dc_sw	4, MC_DC04_VALUE
++	dc_sw	5, MC_DC05_VALUE
++	dc_sw	6, MC_DC06_VALUE
++	dc_sw	7, MC_DC07_VALUE
++	dc_sw	8, MC_DC08_VALUE
++	dc_sw	9, MC_DC09_VALUE
++
++	dc_sw	10, MC_DC10_VALUE
++	dc_sw	11, MC_DC11_VALUE
++	dc_sw	12, MC_DC12_VALUE
++	dc_sw	13, MC_DC13_VALUE
++	dc_sw	14, MC_DC14_VALUE
++	dc_sw	15, MC_DC15_VALUE
++	dc_sw	16, MC_DC16_VALUE
++	dc_sw	17, MC_DC17_VALUE
++	dc_sw	18, MC_DC18_VALUE
++	dc_sw	19, MC_DC19_VALUE
++
++	dc_sw	20, MC_DC20_VALUE
++	dc_sw	21, MC_DC21_VALUE
++	dc_sw	22, MC_DC22_VALUE
++	dc_sw	23, MC_DC23_VALUE
++	dc_sw	24, MC_DC24_VALUE
++	dc_sw	25, MC_DC25_VALUE
++	dc_sw	26, MC_DC26_VALUE
++	dc_sw	27, MC_DC27_VALUE
++	dc_sw	28, MC_DC28_VALUE
++	dc_sw	29, MC_DC29_VALUE
++
++	dc_sw	30, MC_DC30_VALUE
++	dc_sw	31, MC_DC31_VALUE
++	dc_sw	32, MC_DC32_VALUE
++	dc_sw	33, MC_DC33_VALUE
++	dc_sw	34, MC_DC34_VALUE
++	dc_sw	35, MC_DC35_VALUE
++	dc_sw	36, MC_DC36_VALUE
++	dc_sw	37, MC_DC37_VALUE
++	dc_sw	38, MC_DC38_VALUE
++	dc_sw	39, MC_DC39_VALUE
++
++	dc_sw	40, MC_DC40_VALUE
++	dc_sw	41, MC_DC41_VALUE
++	dc_sw	42, MC_DC42_VALUE
++	dc_sw	43, MC_DC43_VALUE
++	dc_sw	44, MC_DC44_VALUE
++	dc_sw	45, MC_DC45_VALUE
++	dc_sw	46, MC_DC46_VALUE
++
++	/* Set start bit of DDR memory controller */
++	li	t2, LTQ_MC_DDR_DC03_MC_START
++	sw	t2, LTQ_MC_DDR_DC_OFFSET(3)(t1)
++
++	/* Wait until DLL has locked and core is ready for data transfers */
++wait_ready:
++	lw	t2, LTQ_MC_GEN_STAT(t0)
++	li	t3, LTQ_MC_GEN_STAT_DLCK_PWRON
++	and	t2, t3
++	bne	t2, t3, wait_ready
++
++finished:
++	jr	ra
++
++	END(ltq_mem_init)
+diff --git a/arch/mips/cpu/mips32/danube/pmu.c b/arch/mips/cpu/mips32/danube/pmu.c
+new file mode 100644
+index 0000000000..7dd8aeaa8e
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/pmu.c
+@@ -0,0 +1,117 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/pm.h>
++#include <asm/arch/soc.h>
++
++#define LTQ_PMU_PWDCR_RESERVED		0xFD0C001C
++
++#define LTQ_PMU_PWDCR_TDM		(1 << 25)
++#define LTQ_PMU_PWDCR_PPE_ENET0		(1 << 23)
++#define LTQ_PMU_PWDCR_PPE_ENET1		(1 << 22)
++#define LTQ_PMU_PWDCR_PPE_TC		(1 << 21)
++#define LTQ_PMU_PWDCR_DEU		(1 << 20)
++#define LTQ_PMU_PWDCR_UART1		(1 << 17)
++#define LTQ_PMU_PWDCR_SDIO		(1 << 16)
++#define LTQ_PMU_PWDCR_AHB		(1 << 15)
++#define LTQ_PMU_PWDCR_FPI0		(1 << 14)
++#define LTQ_PMU_PWDCR_PPE		(1 << 13)
++#define LTQ_PMU_PWDCR_GPTC		(1 << 12)
++#define LTQ_PMU_PWDCR_LEDC		(1 << 11)
++#define LTQ_PMU_PWDCR_EBU		(1 << 10)
++#define LTQ_PMU_PWDCR_DSL		(1 << 9)
++#define LTQ_PMU_PWDCR_SPI		(1 << 8)
++#define LTQ_PMU_PWDCR_UART0		(1 << 7)
++#define LTQ_PMU_PWDCR_USB		(1 << 6)
++#define LTQ_PMU_PWDCR_DMA		(1 << 5)
++#define LTQ_PMU_PWDCR_FPI1		(1 << 1)
++#define LTQ_PMU_PWDCR_USB_PHY		(1 << 0)
++
++struct ltq_pmu_regs {
++	u32	rsvd0[7];
++	u32	pwdcr;
++	u32	sr;
++	u32	pwdcr1;
++	u32	sr1;
++};
++
++static struct ltq_pmu_regs *ltq_pmu_regs =
++	(struct ltq_pmu_regs *) CKSEG1ADDR(LTQ_PMU_BASE);
++
++u32 ltq_pm_map(enum ltq_pm_modules module)
++{
++	u32 val;
++
++	switch (module) {
++	case LTQ_PM_CORE:
++		val = LTQ_PMU_PWDCR_UART1 | LTQ_PMU_PWDCR_FPI0 |
++			LTQ_PMU_PWDCR_LEDC | LTQ_PMU_PWDCR_EBU;
++		break;
++	case LTQ_PM_DMA:
++		val = LTQ_PMU_PWDCR_DMA;
++		break;
++	case LTQ_PM_ETH:
++		val = LTQ_PMU_PWDCR_PPE_ENET0 | LTQ_PMU_PWDCR_PPE_TC |
++			LTQ_PMU_PWDCR_PPE;
++		break;
++	case LTQ_PM_SPI:
++		val = LTQ_PMU_PWDCR_SPI;
++		break;
++	default:
++		val = 0;
++		break;
++	}
++
++	return val;
++}
++
++int ltq_pm_enable(enum ltq_pm_modules module)
++{
++	const unsigned long timeout = 1000;
++	unsigned long timebase;
++	u32 sr, val;
++
++	val = ltq_pm_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_clrbits(&ltq_pmu_regs->pwdcr, val);
++
++	timebase = get_timer(0);
++
++	do {
++		sr = ltq_readl(&ltq_pmu_regs->sr);
++		if (~sr & val)
++			return 0;
++	} while (get_timer(timebase) < timeout);
++
++	return 1;
++}
++
++int ltq_pm_disable(enum ltq_pm_modules module)
++{
++	u32 val;
++
++	val = ltq_pm_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_setbits(&ltq_pmu_regs->pwdcr, val);
++
++	return 0;
++}
++
++void ltq_pmu_init(void)
++{
++	u32 set, clr;
++
++	clr = ltq_pm_map(LTQ_PM_CORE);
++	set = ~(LTQ_PMU_PWDCR_RESERVED | clr);
++
++	ltq_clrsetbits(&ltq_pmu_regs->pwdcr, clr, set);
++}
+diff --git a/arch/mips/cpu/mips32/danube/rcu.c b/arch/mips/cpu/mips32/danube/rcu.c
+new file mode 100644
+index 0000000000..906491ac0e
+--- /dev/null
++++ b/arch/mips/cpu/mips32/danube/rcu.c
+@@ -0,0 +1,125 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/reset.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/arch/soc.h>
++
++#define LTQ_RCU_RD_SRST		(1 << 30)	/* Global SW Reset */
++#define LTQ_RCU_RD_MC		(1 << 14)	/* Memory Controller */
++#define LTQ_RCU_RD_PCI		(1 << 13)	/* PCI core */
++#define LTQ_RCU_RD_DFE_AFE	(1 << 12)	/* Voice DFE/AFE */
++#define LTQ_RCU_RD_DSL_AFE	(1 << 11)	/* DSL AFE */
++#define LTQ_RCU_RD_SDIO		(1 << 10)	/* SDIO core */
++#define LTQ_RCU_RD_DMA		(1 << 9)	/* DMA core */
++#define LTQ_RCU_RD_PPE		(1 << 8)	/* PPE core */
++#define LTQ_RCU_RD_ARC_DFE	(1 << 7)	/* ARC/DFE core */
++#define LTQ_RCU_RD_AHB		(1 << 6)	/* AHB bus */
++#define LTQ_RCU_RD_ENET_MAC1	(1 << 5)	/* Ethernet MAC1 */
++#define LTQ_RCU_RD_USB		(1 << 4)	/* USB and Phy core */
++#define LTQ_RCU_RD_CPU1		(1 << 3)	/* CPU1 subsystem */
++#define LTQ_RCU_RD_FPI		(1 << 2)	/* FPI bus */
++#define LTQ_RCU_RD_CPU0		(1 << 1)	/* CPU0 subsystem */
++#define LTQ_RCU_RD_HRST		(1 << 0)	/* HW reset via HRST pin */
++
++#define LTQ_RCU_STAT_BOOT_SHIFT		18
++#define LTQ_RCU_STAT_BOOT_MASK		(0x7 << LTQ_RCU_STAT_BOOT_SHIFT)
++
++struct ltq_rcu_regs {
++	u32	rsvd0[4];
++	u32	req;		/* Reset request */
++	u32	stat;		/* Reset status */
++	u32	usb_cfg;	/* USB configure */
++	u32	rsvd1[2];
++	u32	pci_rdy;	/* PCI boot ready */
++};
++
++static struct ltq_rcu_regs *ltq_rcu_regs =
++	(struct ltq_rcu_regs *) CKSEG1ADDR(LTQ_RCU_BASE);
++
++u32 ltq_reset_map(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	switch (module) {
++	case LTQ_RESET_CORE:
++	case LTQ_RESET_SOFT:
++		val = LTQ_RCU_RD_SRST | LTQ_RCU_RD_CPU1;
++		break;
++	case LTQ_RESET_DMA:
++		val = LTQ_RCU_RD_DMA;
++		break;
++	case LTQ_RESET_ETH:
++		val = LTQ_RCU_RD_PPE;
++		break;
++	case LTQ_RESET_HARD:
++		val = LTQ_RCU_RD_HRST;
++		break;
++	default:
++		val = 0;
++		break;
++	}
++
++	return val;
++}
++
++int ltq_reset_activate(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	val = ltq_reset_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_setbits(&ltq_rcu_regs->req, val);
++
++	return 0;
++}
++
++int ltq_reset_deactivate(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	val = ltq_reset_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_clrbits(&ltq_rcu_regs->req, val);
++
++	return 0;
++}
++
++enum ltq_boot_select ltq_boot_select(void)
++{
++	u32 stat;
++	unsigned int bootstrap;
++
++	stat = ltq_readl(&ltq_rcu_regs->stat);
++	bootstrap = (stat & LTQ_RCU_STAT_BOOT_MASK) >> LTQ_RCU_STAT_BOOT_SHIFT;
++
++	switch (bootstrap) {
++	case 0:
++		return BOOT_NOR_NO_BOOTROM;
++	case 1:
++		return BOOT_NOR;
++	case 2:
++		return BOOT_MII0;
++	case 3:
++		return BOOT_PCI;
++	case 4:
++		return BOOT_UART;
++	case 5:
++		return BOOT_SPI;
++	case 6:
++		return BOOT_NAND;
++	case 7:
++		return BOOT_RMII0;
++	default:
++		return BOOT_UNKNOWN;
++	}
++}
+diff --git a/arch/mips/include/asm/arch-danube/config.h b/arch/mips/include/asm/arch-danube/config.h
+new file mode 100644
+index 0000000000..719790b00e
+--- /dev/null
++++ b/arch/mips/include/asm/arch-danube/config.h
+@@ -0,0 +1,159 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Common board configuration for Lantiq XWAY Danube family
++ *
++ * Use following defines in your board config to enable specific features
++ * and drivers for this SoC:
++ *
++ * CONFIG_LTQ_SUPPORT_UART
++ * - support the Danube ASC/UART interface and console
++ *
++ * CONFIG_LTQ_SUPPORT_NOR_FLASH
++ * - support a parallel NOR flash via the CFI interface in flash bank 0
++ *
++ * CONFIG_LTQ_SUPPORT_ETHERNET
++ * - support the Danube ETOP and MAC interface
++ *
++ * CONFIG_LTQ_SUPPORT_SPI_FLASH
++ * - support the Danube SPI interface and serial flash drivers
++ * - specific SPI flash drivers must be configured separately
++ */
++
++#ifndef __DANUBE_CONFIG_H__
++#define __DANUBE_CONFIG_H__
++
++/* CPU and SoC type */
++#define CONFIG_SOC_LANTIQ
++#define CONFIG_SOC_XWAY_DANUBE
++
++/* Cache configuration */
++#define CONFIG_SYS_MIPS_CACHE_MODE	CONF_CM_CACHABLE_NONCOHERENT
++#define CONFIG_SYS_MIPS_CACHE_BASE	0x9fc00000
++#define CONFIG_SYS_MIPS_CACHE_INIT_RAM_LOAD
++
++#define CONFIG_SYS_MALLOC_LEN		1 * 1024 * 1024
++
++/*
++ * Supported clock modes
++ * PLL0 clock output is 333 MHz
++ * PLL1 clock output is 262.144 MHz
++ */
++#define LTQ_CLK_CPU_333_DDR_167		0	/* Base PLL0, OCP 2 */
++#define LTQ_CLK_CPU_111_DDR_111		1	/* Base PLL0, OCP 1 */
++
++/* CPU speed */
++#define CONFIG_SYS_CLOCK_MODE		LTQ_CLK_CPU_333_DDR_167
++#define CONFIG_SYS_HZ			1000
++
++/* RAM */
++#define CONFIG_SYS_SDRAM_BASE		0x80000000
++#define CONFIG_SYS_SDRAM_BASE_UC	0xa0000000
++#define CONFIG_SYS_MEMTEST_START	0x81000000
++#define CONFIG_SYS_MEMTEST_END		0x82000000
++#define CONFIG_SYS_LOAD_ADDR		0x81000000
++#define CONFIG_SYS_LOAD_SIZE		(2 * 1024 * 1024)
++#define CONFIG_SYS_INIT_SP_OFFSET	0x4000
++
++/* SRAM */
++#define CONFIG_SYS_SRAM_BASE		0xBE1A0000
++#define CONFIG_SYS_SRAM_SIZE		0x10000
++
++/* ASC/UART driver and console */
++#define CONFIG_LANTIQ_SERIAL
++#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++/* GPIO */
++#define CONFIG_LANTIQ_GPIO
++#define CONFIG_LTQ_GPIO_MAX_BANKS	2
++
++/* FLASH driver */
++#if defined(CONFIG_LTQ_SUPPORT_NOR_FLASH)
++#define CONFIG_SYS_MAX_FLASH_BANKS	1
++#define CONFIG_SYS_MAX_FLASH_SECT	256
++#define CONFIG_SYS_FLASH_BASE		0xB0000000
++#define CONFIG_FLASH_16BIT
++#define CONFIG_SYS_FLASH_CFI
++#define CONFIG_FLASH_CFI_DRIVER
++#define CONFIG_SYS_FLASH_CFI_WIDTH	FLASH_CFI_16BIT
++#define CONFIG_SYS_FLASH_USE_BUFFER_WRITE
++#define CONFIG_FLASH_SHOW_PROGRESS	50
++#define CONFIG_SYS_FLASH_PROTECTION
++#define CONFIG_CFI_FLASH_USE_WEAK_ADDR_SWAP
++
++#define CONFIG_CMD_FLASH
++#else
++#define CONFIG_SYS_NO_FLASH
++#endif /* CONFIG_NOR_FLASH */
++
++#if defined(CONFIG_LTQ_SUPPORT_SPI_FLASH)
++#define CONFIG_LANTIQ_SPI
++#define CONFIG_SPI_FLASH
++
++#define CONFIG_CMD_SF
++#define CONFIG_CMD_SPI
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_NAND_FLASH)
++#define CONFIG_NAND_LANTIQ
++#define CONFIG_SYS_NAND_ONFI_DETECTION
++#define CONFIG_SYS_NAND_SELF_INIT
++#define CONFIG_SYS_MAX_NAND_DEVICE	1
++#define CONFIG_SYS_NAND_BASE		0xB4000000
++
++#define CONFIG_CMD_NAND
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_ETHERNET)
++#define CONFIG_LANTIQ_DMA
++#define CONFIG_LANTIQ_DANUBE_ETOP
++
++#define CONFIG_PHYLIB
++#define CONFIG_MII
++
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#endif
++
++#define CONFIG_SPL_MAX_SIZE		(32 * 1024)
++#define CONFIG_SPL_BSS_SIZE		(4 * 1024)
++#define CONFIG_SPL_STACK_SIZE		(4 * 1024)
++#define CONFIG_SPL_STACK_BASE		(CONFIG_SYS_SRAM_BASE + \
++					CONFIG_SPL_MAX_SIZE + \
++					CONFIG_SPL_STACK_SIZE - 1)
++#define CONFIG_SPL_BSS_BASE		(CONFIG_SPL_STACK_BASE + 1)
++
++#define CONFIG_SPL_MC_TUNE_BASE		(CONFIG_SYS_SDRAM_BASE_UC + \
++					CONFIG_SYS_INIT_SP_OFFSET)
++
++#if defined(CONFIG_SYS_BOOT_RAM)
++#define CONFIG_SYS_TEXT_BASE		0xA0100000
++#define CONFIG_SKIP_LOWLEVEL_INIT
++#define CONFIG_SYS_DISABLE_CACHE
++#endif
++
++#if defined(CONFIG_SYS_BOOT_NOR)
++#define CONFIG_SYS_TEXT_BASE		0xB0000000
++#endif
++
++#if defined(CONFIG_SYS_BOOT_NORSPL)
++#define CONFIG_SYS_TEXT_BASE		0x80100000
++#if defined(CONFIG_TPL_BUILD)
++#define CONFIG_SPL_TEXT_BASE		0xBE1A0000
++#else
++#define CONFIG_SPL_TEXT_BASE		0xB0000000
++#endif
++#define CONFIG_TPL_TEXT_BASE		0xBE1A0000
++#endif
++
++#if defined(CONFIG_SYS_BOOT_NOR) || defined(CONFIG_SYS_BOOT_NORSPL)
++#define CONFIG_SYS_XWAY_EBU_BOOTCFG	0x688C688C
++#define CONFIG_XWAY_SWAP_BYTES
++#endif
++
++#define	CONFIG_SYS_MONITOR_BASE		CONFIG_SYS_TEXT_BASE
++
++#endif /* __DANUBE_CONFIG_H__ */
+diff --git a/arch/mips/include/asm/arch-danube/gpio.h b/arch/mips/include/asm/arch-danube/gpio.h
+new file mode 100644
+index 0000000000..70eb0860ae
+--- /dev/null
++++ b/arch/mips/include/asm/arch-danube/gpio.h
+@@ -0,0 +1,12 @@
++/*
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __DANUBE_GPIO_H__
++#define __DANUBE_GPIO_H__
++
++#include <asm/lantiq/gpio.h>
++
++#endif /* __DANUBE_GPIO_H__ */
+diff --git a/arch/mips/include/asm/arch-danube/soc.h b/arch/mips/include/asm/arch-danube/soc.h
+new file mode 100644
+index 0000000000..47ef62a0cc
+--- /dev/null
++++ b/arch/mips/include/asm/arch-danube/soc.h
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (C) 2007-2010 Lantiq Deutschland GmbH
++ * Copyright (C) 2011-2013 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __DANUBE_SOC_H__
++#define __DANUBE_SOC_H__
++
++#define LTQ_ASC0_BASE			0x1E100400
++#define LTQ_SPI_BASE			0x1E100800
++#define LTQ_GPIO_BASE			0x1E100B00
++#define LTQ_SSIO_BASE			0x1E100BB0
++#define LTQ_ASC1_BASE			0x1E100C00
++#define LTQ_DMA_BASE			0x1E104100
++
++#define LTQ_EBU_BASE			0x1E105300
++#define LTQ_EBU_REGION0_BASE		0x10000000
++#define LTQ_EBU_REGION1_BASE		0x14000000
++#define LTQ_EBU_NAND_BASE		(LTQ_EBU_BASE + 0xB0)
++
++#define LTQ_PPE_BASE			0x1E180000
++#define LTQ_PPE_ETOP_BASE		(LTQ_PPE_BASE + 0x11800)
++#define LTQ_PPE_ENET0_BASE		(LTQ_PPE_BASE + 0x11840)
++
++#define LTQ_PMU_BASE			0x1F102000
++#define LTQ_CGU_BASE			0x1F103000
++#define LTQ_MPS_BASE			0x1F107000
++#define LTQ_CHIPID_BASE			(LTQ_MPS_BASE + 0x340)
++#define LTQ_RCU_BASE			0x1F203000
++
++#define LTQ_MC_GEN_BASE			0x1F800000
++#define LTQ_MC_SDR_BASE			0x1F800200
++#define LTQ_MC_DDR_BASE			0x1F801000
++#define LTQ_MC_DDR_DC_OFFSET(x)		(x * 0x10)
++
++#endif /* __DANUBE_SOC_H__ */
+-- 
+2.11.0
+

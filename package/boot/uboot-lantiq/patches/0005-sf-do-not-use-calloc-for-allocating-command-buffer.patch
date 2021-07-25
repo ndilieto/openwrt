@@ -1,0 +1,51 @@
+From d8596bc555b88eda15e03baf6384ff8ddfb2e169 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sat, 25 Jan 2014 16:52:56 +0100
+Subject: [PATCH 005/158] sf: do not use calloc() for allocating command buffer
+
+Using calloc() to create a command buffer with a size of 3 or
+4 bytes is senseless overhead. We can always use a buffer on
+stack with a fixed size of 4 bytes.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/spi/sf_ops.c | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/mtd/spi/sf_ops.c b/drivers/mtd/spi/sf_ops.c
+index 62fa026951..be22156041 100644
+--- a/drivers/mtd/spi/sf_ops.c
++++ b/drivers/mtd/spi/sf_ops.c
+@@ -10,7 +10,6 @@
+ 
+ #include <common.h>
+ #include <errno.h>
+-#include <malloc.h>
+ #include <spi.h>
+ #include <spi_flash.h>
+ #include <watchdog.h>
+@@ -364,7 +363,7 @@ int spi_flash_read_common(struct spi_flash *flash, const u8 *cmd,
+ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ 		size_t len, void *data)
+ {
+-	u8 *cmd, cmdsz;
++	u8 cmd[SPI_FLASH_CMD_LEN + 1], cmdsz;
+ 	u32 remain_len, read_len, read_addr;
+ 	int bank_sel = 0;
+ 	int ret = -1;
+@@ -390,11 +389,7 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ 	}
+ 
+ 	cmdsz = SPI_FLASH_CMD_LEN + flash->dummy_byte;
+-	cmd = calloc(1, cmdsz);
+-	if (!cmd) {
+-		debug("SF: Failed to allocate cmd\n");
+-		return -ENOMEM;
+-	}
++	memset(cmd, 0, cmdsz);
+ 
+ 	cmd[0] = flash->read_cmd;
+ 	while (len) {
+-- 
+2.11.0
+

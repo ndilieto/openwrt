@@ -1,0 +1,52 @@
+From fd96bb3476a0aaa16fdb9384e3c030bc8414c582 Mon Sep 17 00:00:00 2001
+From: Heiko Schocher <hs@denx.de>
+Date: Tue, 24 Jun 2014 10:10:02 +0200
+Subject: [PATCH 068/158] linux include: add ERR_CAST
+
+add missing ERR_CAST to linux/err.h as it is needed for ubi/ubifs support
+
+Signed-off-by: Heiko Schocher <hs@denx.de>
+---
+ include/linux/err.h | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/err.h b/include/linux/err.h
+index 96c0c72baa..5b3c8bcf70 100644
+--- a/include/linux/err.h
++++ b/include/linux/err.h
+@@ -1,12 +1,8 @@
+ #ifndef _LINUX_ERR_H
+ #define _LINUX_ERR_H
+ 
+-/* XXX U-BOOT XXX */
+-#if 0
+ #include <linux/compiler.h>
+-#else
+ #include <linux/compat.h>
+-#endif
+ 
+ #include <asm/errno.h>
+ 
+@@ -40,6 +36,19 @@ static inline long IS_ERR(const void *ptr)
+ 	return IS_ERR_VALUE((unsigned long)ptr);
+ }
+ 
++/**
++ * ERR_CAST - Explicitly cast an error-valued pointer to another pointer type
++ * @ptr: The pointer to cast.
++ *
++ * Explicitly cast an error-valued pointer to another pointer type in such a
++ * way as to make it clear that's what's going on.
++ */
++static inline void * __must_check ERR_CAST(__force const void *ptr)
++{
++	/* cast away the const */
++	return (void *) ptr;
++}
++
+ #endif
+ 
+ #endif /* _LINUX_ERR_H */
+-- 
+2.11.0
+

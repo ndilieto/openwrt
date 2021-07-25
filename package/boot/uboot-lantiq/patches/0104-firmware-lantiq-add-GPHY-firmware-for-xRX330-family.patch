@@ -1,0 +1,30 @@
+From baf8ab0dead2c47320fd546d8cba90fc44f29077 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 9 Sep 2015 18:57:49 +0200
+Subject: [PATCH 104/158] firmware: lantiq: add GPHY firmware for xRX330 family
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ firmware/Makefile                    |   2 ++
+ firmware/lantiq/xrx300_phy11g_a21.fw | Bin 0 -> 65536 bytes
+ firmware/lantiq/xrx300_phy22f_a21.fw | Bin 0 -> 65536 bytes
+ 3 files changed, 2 insertions(+)
+ create mode 100644 firmware/lantiq/xrx300_phy11g_a21.fw
+ create mode 100644 firmware/lantiq/xrx300_phy22f_a21.fw
+
+diff --git a/firmware/Makefile b/firmware/Makefile
+index 798cfbe3ec..5053f3e4e4 100644
+--- a/firmware/Makefile
++++ b/firmware/Makefile
+@@ -7,6 +7,8 @@ fw-shipped-$(CONFIG_FW_VRX200_PHY11G_A1X) += lantiq/vrx200_phy11g_a1x.fw
+ fw-shipped-$(CONFIG_FW_VRX200_PHY11G_A2X) += lantiq/vrx200_phy11g_a2x.fw
+ fw-shipped-$(CONFIG_FW_VRX200_PHY22F_A1X) += lantiq/vrx200_phy22f_a1x.fw
+ fw-shipped-$(CONFIG_FW_VRX200_PHY22F_A2X) += lantiq/vrx200_phy22f_a2x.fw
++fw-shipped-$(CONFIG_FW_XRX300_PHY11G_A21) += lantiq/xrx300_phy11g_a21.fw
++fw-shipped-$(CONFIG_FW_XRX300_PHY22F_A21) += lantiq/xrx300_phy22f_a21.fw
+ 
+ fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
+ 
+-- 
+2.11.0
+

@@ -1,0 +1,32 @@
+From a70a2c1a583a29c16d9bd88d58c934949d3c413f Mon Sep 17 00:00:00 2001
+From: Tony Wu <tung7970@gmail.com>
+Date: Sat, 30 May 2015 15:02:39 +0800
+Subject: [PATCH 045/158] MIPS: fix missing semicolon in cacheops.h
+
+Commit 49bbdae318e31758cab7ed15aa29abd8ad18de13 upstream.
+
+Fix missing semicolon in cacheops.h introduced in commit
+2b8bcc5a2 (MIPS: avoid .set ISA for cache operations)
+
+Signed-off-by: Tony Wu <tung7970@gmail.com>
+Cc: Paul Burton <paul.burton@imgtec.com>
+---
+ arch/mips/include/asm/cacheops.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/mips/include/asm/cacheops.h b/arch/mips/include/asm/cacheops.h
+index 75ec380980..af2adc701e 100644
+--- a/arch/mips/include/asm/cacheops.h
++++ b/arch/mips/include/asm/cacheops.h
+@@ -18,7 +18,7 @@ static inline void mips_cache(int op, const volatile void *addr)
+ #ifdef __GCC_HAVE_BUILTIN_MIPS_CACHE
+ 	__builtin_mips_cache(op, addr);
+ #else
+-	__asm__ __volatile__("cache %0, %1" : : "i"(op), "R"(addr))
++	__asm__ __volatile__("cache %0, %1" : : "i"(op), "R"(addr));
+ #endif
+ }
+ 
+-- 
+2.11.0
+

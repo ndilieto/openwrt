@@ -1,0 +1,30 @@
+From 9b7c22c6a20231517f3a5ced21d1056deecc0367 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Thu, 17 Sep 2015 15:17:16 +0200
+Subject: [PATCH 084/158] mtd: export prototype for del_mtd_device()
+
+This fixes following warning:
+
+.../drivers/mtd/spi/sf_mtd.c: In function 'spi_flash_mtd_unregister':
+.../drivers/mtd/spi/sf_mtd.c:102:2: warning: implicit declaration of function 'del_mtd_device' [-Wimplicit-function-declaration]
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ include/linux/mtd/mtd.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index c746f0bfee..572ee24628 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -482,6 +482,7 @@ static inline int mtd_is_bitflip_or_eccerr(int err) {
+ #ifdef __UBOOT__
+ /* drivers/mtd/mtdcore.h */
+ int add_mtd_device(struct mtd_info *mtd);
++int del_mtd_device(struct mtd_info *mtd);
+ int add_mtd_partitions(struct mtd_info *, const struct mtd_partition *, int);
+ int del_mtd_partitions(struct mtd_info *);
+ #endif
+-- 
+2.11.0
+

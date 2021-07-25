@@ -1,0 +1,2638 @@
+From 38fcdca6fcdb260c181b5a301eb670a957af8a9c Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 9 Sep 2015 18:57:55 +0200
+Subject: [PATCH 109/158] MIPS: add support for Lantiq XWAY xRX330 family
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/lantiq-common/cpu.c   |   9 +-
+ arch/mips/cpu/mips32/lantiq-common/start.S |   2 +-
+ arch/mips/cpu/mips32/xrx330/Makefile       |   7 +
+ arch/mips/cpu/mips32/xrx330/cgu.c          | 217 ++++++++++
+ arch/mips/cpu/mips32/xrx330/chipid.c       |  98 +++++
+ arch/mips/cpu/mips32/xrx330/config.mk      |  22 +
+ arch/mips/cpu/mips32/xrx330/ebu.c          |  95 +++++
+ arch/mips/cpu/mips32/xrx330/gphy.c         |  40 ++
+ arch/mips/cpu/mips32/xrx330/mem.c          | 660 +++++++++++++++++++++++++++++
+ arch/mips/cpu/mips32/xrx330/pmu.c          | 121 ++++++
+ arch/mips/cpu/mips32/xrx330/rcu.c          | 326 ++++++++++++++
+ arch/mips/include/asm/arch-xrx330/config.h | 140 ++++++
+ arch/mips/include/asm/arch-xrx330/gphy.h   |  56 +++
+ arch/mips/include/asm/arch-xrx330/gpio.h   |  12 +
+ arch/mips/include/asm/arch-xrx330/nand.h   |  22 +
+ arch/mips/include/asm/arch-xrx330/soc.h    |  49 +++
+ arch/mips/include/asm/arch-xrx330/switch.h | 513 ++++++++++++++++++++++
+ arch/mips/include/asm/lantiq/chipid.h      |  22 +
+ arch/mips/include/asm/lantiq/clk.h         |   6 +
+ arch/mips/include/asm/lantiq/cpu.h         |   5 +
+ 20 files changed, 2419 insertions(+), 3 deletions(-)
+ create mode 100644 arch/mips/cpu/mips32/xrx330/Makefile
+ create mode 100644 arch/mips/cpu/mips32/xrx330/cgu.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/chipid.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/config.mk
+ create mode 100644 arch/mips/cpu/mips32/xrx330/ebu.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/gphy.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/mem.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/pmu.c
+ create mode 100644 arch/mips/cpu/mips32/xrx330/rcu.c
+ create mode 100644 arch/mips/include/asm/arch-xrx330/config.h
+ create mode 100644 arch/mips/include/asm/arch-xrx330/gphy.h
+ create mode 100644 arch/mips/include/asm/arch-xrx330/gpio.h
+ create mode 100644 arch/mips/include/asm/arch-xrx330/nand.h
+ create mode 100644 arch/mips/include/asm/arch-xrx330/soc.h
+ create mode 100644 arch/mips/include/asm/arch-xrx330/switch.h
+
+diff --git a/arch/mips/cpu/mips32/lantiq-common/cpu.c b/arch/mips/cpu/mips32/lantiq-common/cpu.c
+index 760e39f16d..9a5a333607 100644
+--- a/arch/mips/cpu/mips32/lantiq-common/cpu.c
++++ b/arch/mips/cpu/mips32/lantiq-common/cpu.c
+@@ -10,13 +10,18 @@
+ #include <asm/lantiq/reset.h>
+ #include <asm/lantiq/cpu.h>
+ 
+-static const char ltq_bootsel_strings[][16] = {
++static const char ltq_bootsel_strings[][20] = {
+ 	"NOR",
+ 	"NOR w/o BootROM",
+ 	"UART",
+ 	"UART w/o EEPROM",
+ 	"SPI",
+ 	"NAND",
++	"NAND Samsung 2kB",
++	"NAND Samsung 1kB",
++	"HSNAND Samsung 2kB",
++	"HSNAND Samsung 1kB",
++	"HSNAND ONFI",
+ 	"PCI",
+ 	"MII0",
+ 	"RMII0",
+@@ -34,7 +39,7 @@ const char *ltq_boot_select_str(void)
+ 	return ltq_bootsel_strings[bootsel];
+ }
+ 
+-void ltq_chip_print_info(void)
++__weak void ltq_chip_print_info(void)
+ {
+ 	char buf[32];
+ 
+diff --git a/arch/mips/cpu/mips32/lantiq-common/start.S b/arch/mips/cpu/mips32/lantiq-common/start.S
+index 1c705b4ca4..0634f4935e 100644
+--- a/arch/mips/cpu/mips32/lantiq-common/start.S
++++ b/arch/mips/cpu/mips32/lantiq-common/start.S
+@@ -70,7 +70,7 @@
+ #define STATUS_LANTIQ		(STATUS_MIPS34K | STATUS_MIPS32_64)
+ #endif
+ 
+-#ifdef CONFIG_SOC_XWAY_VRX200
++#if defined(CONFIG_SOC_XWAY_VRX200) || defined(CONFIG_SOC_XWAY_XRX330)
+ #define CONFIG0_LANTIQ		(CONFIG0_MIPS34K | CONFIG0_MIPS32_64)
+ #define STATUS_LANTIQ		(STATUS_MIPS34K | STATUS_MIPS32_64)
+ #endif
+diff --git a/arch/mips/cpu/mips32/xrx330/Makefile b/arch/mips/cpu/mips32/xrx330/Makefile
+new file mode 100644
+index 0000000000..56ab29dc69
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/Makefile
+@@ -0,0 +1,7 @@
++#
++# Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-y	+= cgu.o chipid.o ebu.o gphy.o mem.o pmu.o rcu.o
+diff --git a/arch/mips/cpu/mips32/xrx330/cgu.c b/arch/mips/cpu/mips32/xrx330/cgu.c
+new file mode 100644
+index 0000000000..6e0ef006bd
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/cgu.c
+@@ -0,0 +1,217 @@
++/*
++ * Copyright (C) 2014 Lantiq Deutschland GmbH
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/arch/gphy.h>
++#include <asm/lantiq/clk.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/chipid.h>
++#include <asm/lantiq/reset.h>
++
++#define CGU_SYS_CPU_FS_SHIFT		9
++#define CGU_SYS_CPU_FS_MASK		(0x3 << CGU_SYS_CPU_FS_SHIFT)
++#define CGU_SYS_CPU_FS_600		(0 << CGU_SYS_CPU_FS_SHIFT)
++#define CGU_SYS_CPU_FS_666		(1 << CGU_SYS_CPU_FS_SHIFT)
++#define CGU_SYS_CPU_FS_720		(2 << CGU_SYS_CPU_FS_SHIFT)
++#define CGU_SYS_U_FREQ			(1 << 7)
++#define CGU_SYS_CPU_SHIFT		4
++#define CGU_SYS_CPU_MASK		(0x7 << CGU_SYS_CPU_SHIFT)
++#define CGU_SYS_CPU_EQUAL_SYSCLK	(0 << CGU_SYS_CPU_SHIFT)
++#define CGU_SYS_CPU_HALF_SYSCLK		(1 << CGU_SYS_CPU_SHIFT)
++#define CGU_SYS_CPU_QUARTER_SYSCLK	(2 << CGU_SYS_CPU_SHIFT)
++#define CGU_SYS_DDR_MASK		0x7
++#define CGU_SYS_DDR_HALF_SYSCLK		1
++#define CGU_SYS_DDR_QUARTER_SYSCLK	2
++#define CGU_SYS_RESERVED		(1 << 8)
++
++#define CGU_CLKFSR_PPE_SHIFT		16
++#define CGU_CLKFSR_PPE_250		(0x1 << CGU_CLKFSR_PPE_SHIFT)
++#define CGU_CLKFSR_PPE_432		(0x2 << CGU_CLKFSR_PPE_SHIFT)
++#define CGU_CLKFSR_PPE_400		(0x4 << CGU_CLKFSR_PPE_SHIFT)
++
++#define CGU_IFCLK_FPI_SEL_SHIFT		25
++#define CGU_IFCLK_FPI_SEL_MASK		(0xf << CGU_IFCLK_FPI_SEL_SHIFT)
++#define CGU_IFCLK_GPHY_SEL_SHIFT	2
++#define CGU_IFCLK_GPHY_SEL_MASK		(0x7 << CGU_IFCLK_GPHY_SEL_SHIFT)
++
++#define CGU_PLL0_FMOD_S0		(1 << 23)
++#define CGU_PLL0_FMOD_S1		(1 << 22)
++#define CGU_PLL0_PS2_EN			(1 << 21)
++#define CGU_PLL0_PS1_EN			(1 << 20)
++#define CGU_PLL0_N_SHIFT		6
++#define CGU_PLL0_N_MASK			(0xff << CGU_PLL0_N_SHIFT)
++#define CGU_PLL0_M_SHIFT		2
++#define CGU_PLL0_M_MASK			(0xf << CGU_PLL0_M_SHIFT)
++#define CGU_PLL0_LOCK			(1 << 1)
++#define CGU_PLL0_EN			(1 << 0)
++
++#define CGU_PLL2_K_SHIFT		20
++#define CGU_PLL2_K_MASK			(0xfff << CGU_PLL2_K_SHIFT)
++#define CGU_PLL2_N_SHIFT		6
++#define CGU_PLL2_N_MASK			(0xff << CGU_PLL2_N_SHIFT)
++#define CGU_PLL2_M_SHIFT		2
++#define CGU_PLL2_M_MASK			(0xf << CGU_PLL2_M_SHIFT)
++#define CGU_PLL2_LOCK			(1 << 1)
++#define CGU_PLL2_EN			(1 << 0)
++
++struct ltq_cgu_regs {
++	u32	rsvd0;
++	u32	pll0_cfg;	/* PLL0 config */
++	u32	pll1_cfg;	/* PLL1 config */
++	u32	sys;		/* System clock */
++	u32	clk_fsr;	/* Clock frequency select */
++	u32	clk_gsr0;	/* Clock gating status 0 */
++	u32	clk_gcr0_a;	/* Clock gating control 0 A */
++	u32	clk_gcr0_b;	/* Clock gating control 0 B */
++	u32	update;		/* CGU update control */
++	u32	if_clk;		/* Interface clock */
++	u32	rsvd1;
++	u32	ct1_sr;		/* CT status 1 */
++	u32	ct_kval;	/* CT K value */
++	u32	pcm_cr;		/* PCM control */
++	u32	rsvd2[2];
++	u32	ephy1_cfg;	/* EPHY1 config */
++	u32	ephy2_cfg;	/* EPHY2 config */
++	u32	ephy3_cfg;	/* EPHY3 config */
++	u32	ephy0_cfg;	/* EPHY0 config */
++	u32	rsvd3[4];
++	u32	pll2_cfg;	/* PLL2 config */
++};
++
++static struct ltq_cgu_regs *ltq_cgu_regs =
++	(struct ltq_cgu_regs *) CKSEG1ADDR(LTQ_CGU_BASE);
++
++static unsigned long ltq_get_sys_clock(void)
++{
++	unsigned int cpu_fs;
++	unsigned long clk;
++
++	cpu_fs = (ltq_readl(&ltq_cgu_regs->sys) & CGU_SYS_CPU_FS_MASK) >>
++		CGU_SYS_CPU_FS_SHIFT;
++
++	switch (cpu_fs) {
++	case 0:
++		clk = CLOCK_600_MHZ;
++		break;
++	case 1:
++		clk = CLOCK_666_MHZ;
++		break;
++	case 2:
++		clk = CLOCK_720_MHZ;
++		break;
++	default:
++		clk = 0;
++		break;
++	}
++
++	return clk;
++}
++
++unsigned long ltq_get_io_region_clock(void)
++{
++	unsigned int ddr;
++	unsigned long clk, sys_clk;
++
++	ddr = ltq_readl(&ltq_cgu_regs->sys) & CGU_SYS_DDR_MASK;
++	sys_clk = ltq_get_sys_clock();
++
++	if (ddr == 2)
++		clk = sys_clk / 4;
++	else
++		clk = sys_clk / 2;
++
++	return clk;
++}
++
++unsigned long ltq_get_cpu_clock(void)
++{
++	unsigned int cpu;
++	unsigned long clk, sys_clk;
++
++	cpu = (ltq_readl(&ltq_cgu_regs->sys) & CGU_SYS_CPU_MASK) >>
++			CGU_SYS_CPU_SHIFT;
++	sys_clk = ltq_get_sys_clock();
++
++	switch (cpu) {
++	case 0:
++		clk = sys_clk;
++		break;
++	case 1:
++		clk = sys_clk / 2;
++		break;
++	case 2:
++		clk = sys_clk / 4;
++		break;
++	default:
++		clk = 0;
++		break;
++	}
++
++	return clk;
++}
++
++unsigned long ltq_get_bus_clock(void)
++{
++	return ltq_get_io_region_clock();
++}
++
++void ltq_cgu_gphy_clk_src(enum ltq_gphy_clk clk)
++{
++	ltq_clrbits(&ltq_cgu_regs->if_clk, CGU_IFCLK_GPHY_SEL_MASK);
++	ltq_setbits(&ltq_cgu_regs->if_clk, clk << CGU_IFCLK_GPHY_SEL_SHIFT);
++}
++
++void ltq_cgu_init(void)
++{
++	u32 cgu_sys, pll0_cfg, pll2_cfg;
++	bool soft_reset = false;
++
++	pll0_cfg = CGU_PLL0_FMOD_S0 | CGU_PLL0_PS2_EN | CGU_PLL0_PS1_EN |
++		177 << CGU_PLL0_N_SHIFT | 2 << CGU_PLL0_M_SHIFT | CGU_PLL0_EN;
++
++	pll2_cfg = 659 << CGU_PLL2_K_SHIFT | 0 << CGU_PLL2_M_SHIFT |
++		CGU_PLL2_EN;
++
++	if (ltq_soc_is_grx389_720())
++		pll2_cfg |= 9 << CGU_PLL2_N_SHIFT;
++	else
++		pll2_cfg |= 11 << CGU_PLL2_N_SHIFT;
++
++	if (pll0_cfg != (ltq_readl(&ltq_cgu_regs->pll0_cfg) & ~CGU_PLL0_LOCK)) {
++		ltq_writel(&ltq_cgu_regs->pll0_cfg, pll0_cfg);
++		soft_reset = true;
++	}
++
++	if (pll2_cfg != (ltq_readl(&ltq_cgu_regs->pll2_cfg) & ~CGU_PLL2_LOCK)) {
++		ltq_writel(&ltq_cgu_regs->pll2_cfg, pll2_cfg);
++		soft_reset = true;
++	}
++
++	/* PLL shadow registers are only applied after soft-reset */
++	if (soft_reset) {
++		ltq_reset_activate(LTQ_RESET_SOFT);
++		for (;;)
++			;
++	}
++
++	if (ltq_soc_is_grx389_720()) {
++		cgu_sys = CGU_SYS_RESERVED | CGU_SYS_CPU_FS_720 |
++			CGU_SYS_CPU_EQUAL_SYSCLK | CGU_SYS_DDR_HALF_SYSCLK;
++
++		ltq_writel(&ltq_cgu_regs->clk_fsr, CGU_CLKFSR_PPE_400);
++	} else {
++		cgu_sys = CGU_SYS_RESERVED | CGU_SYS_CPU_FS_600 |
++			CGU_SYS_CPU_EQUAL_SYSCLK | CGU_SYS_DDR_HALF_SYSCLK;
++
++		ltq_writel(&ltq_cgu_regs->clk_fsr, CGU_CLKFSR_PPE_432);
++	}
++
++	/* CGU.SYS shadow register is applied after setting bit U_FREQ */
++	ltq_writel(&ltq_cgu_regs->sys, cgu_sys | CGU_SYS_U_FREQ);
++
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/chipid.c b/arch/mips/cpu/mips32/xrx330/chipid.c
+new file mode 100644
+index 0000000000..ca7407d2a6
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/chipid.c
+@@ -0,0 +1,98 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/chipid.h>
++#include <asm/lantiq/clk.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/arch/soc.h>
++#include <asm/arch/nand.h>
++
++#define CHIPID_VERSION_SHIFT	28
++#define CHIPID_VERSION_MASK	(0x7 << CHIPID_VERSION_SHIFT)
++#define CHIPID_PNUM_SHIFT	12
++#define CHIPID_PNUM_MASK	(0xFFFF << CHIPID_PNUM_SHIFT)
++#define ID_CFG_FUSE_720		(1 << 17)
++
++struct ltq_chipid_regs {
++	u32	manid;		/* Manufacturer identification */
++	u32	chipid;		/* Chip identification */
++	u32	rsvd[2];
++	u32	id_cfg;
++};
++
++static struct ltq_chipid_regs *ltq_chipid_regs =
++	(struct ltq_chipid_regs *) CKSEG1ADDR(LTQ_CHIPID_BASE);
++
++unsigned int ltq_chip_version_get(void)
++{
++	u32 chipid = ltq_readl(&ltq_chipid_regs->chipid);
++
++	return (chipid & CHIPID_VERSION_MASK) >> CHIPID_VERSION_SHIFT;
++}
++
++unsigned int ltq_chip_partnum_get(void)
++{
++	u32 chipid = ltq_readl(&ltq_chipid_regs->chipid);
++
++	return (chipid & CHIPID_PNUM_MASK) >> CHIPID_PNUM_SHIFT;
++}
++
++const char *ltq_chip_partnum_str(void)
++{
++	enum ltq_chip_partnum partnum = ltq_chip_partnum_get();
++
++	switch (partnum) {
++	case LTQ_SOC_GRX387:
++		return "GRX387";
++	case LTQ_SOC_GRX369:
++		return "GRX369";
++	case LTQ_SOC_GRX389:
++		return "GRX389";
++	default:
++		printf("Unknown partnum: %x\n", partnum);
++	}
++
++	return "";
++}
++
++int ltq_soc_is_grx389_720(void)
++{
++	u32 id_cfg = ltq_readl(&ltq_chipid_regs->id_cfg);
++
++	return !(id_cfg & ID_CFG_FUSE_720);
++}
++
++void ltq_chip_print_info(void)
++{
++	char buf[32];
++	const enum ltq_boot_select bootsel = ltq_boot_select();
++	const char *bootsel_str = ltq_boot_select_str();
++	unsigned int hsnand_strap;
++
++	printf("SoC:   Lantiq %s v1.%u%s\n", ltq_chip_partnum_str(),
++		ltq_chip_version_get(),
++		ltq_soc_is_grx389_720() ? " (720 MHz)" : "");
++	printf("CPU:   %s MHz\n", strmhz(buf, ltq_get_cpu_clock()));
++	printf("IO:    %s MHz\n", strmhz(buf, ltq_get_io_region_clock()));
++	printf("BUS:   %s MHz\n", strmhz(buf, ltq_get_bus_clock()));
++
++	switch (bootsel) {
++	case BOOT_HSNAND_SAMSUNG_2K:
++	case BOOT_HSNAND_SAMSUNG_1K:
++	case BOOT_HSNAND_ONFI:
++		hsnand_strap = ltq_boot_hsnand_info();
++		printf("BOOT:  %s, ECC %s %s %s, %s\n", bootsel_str,
++			hsnand_strap & HSNAND_ECC_OFF ? "off" : "on",
++			hsnand_strap & HSNAND_ECC_4BYTE ? "4B" : "3B",
++			hsnand_strap & HSNAND_ECC_NO_OOB ? "IB" : "OOB",
++			hsnand_strap & HSNAND_BIG_ENDIAN ? "BE" : "LE");
++		break;
++	default:
++		printf("BOOT:  %s\n", bootsel_str);
++	}
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/config.mk b/arch/mips/cpu/mips32/xrx330/config.mk
+new file mode 100644
+index 0000000000..6f5ba781cd
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/config.mk
+@@ -0,0 +1,22 @@
++#
++# Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++PF_CPPFLAGS_XRX := $(call cc-option,-mtune=34kc,)
++PLATFORM_CPPFLAGS += $(PF_CPPFLAGS_XRX)
++
++libs-y += $(CPUDIR)/lantiq-common/
++
++ifndef CONFIG_SPL_BUILD
++ifdef CONFIG_SYS_BOOT_SFSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.sfspl
++endif
++ifdef CONFIG_SYS_BOOT_NANDSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.nandspl
++endif
++ifdef CONFIG_SYS_BOOT_NANDHWSPL
++ALL-$(CONFIG_SPL_LZO_SUPPORT) += u-boot.ltq.lzo.nandhwspl
++endif
++endif
+diff --git a/arch/mips/cpu/mips32/xrx330/ebu.c b/arch/mips/cpu/mips32/xrx330/ebu.c
+new file mode 100644
+index 0000000000..6992d7d5f6
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/ebu.c
+@@ -0,0 +1,95 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/lantiq/io.h>
++
++#define EBU_ADDRSEL_MASK(mask)		((mask & 0xf) << 4)
++#define EBU_ADDRSEL_REGEN		(1 << 0)
++
++#define EBU_CON_WRDIS			(1 << 31)
++#define EBU_CON_ADSWP			(1 << 30)
++#define EBU_CON_AGEN_DEMUX		(0x0 << 24)
++#define EBU_CON_AGEN_MUX		(0x2 << 24)
++#define EBU_CON_SETUP			(1 << 22)
++#define EBU_CON_WAIT_DIS		(0x0 << 20)
++#define EBU_CON_WAIT_ASYNC		(0x1 << 20)
++#define EBU_CON_WAIT_SYNC		(0x2 << 20)
++#define EBU_CON_WINV			(1 << 19)
++#define EBU_CON_PW_8BIT			(0x0 << 16)
++#define EBU_CON_PW_16BIT		(0x1 << 16)
++#define EBU_CON_ALEC(cycles)		((cycles & 0x3) << 14)
++#define EBU_CON_BCGEN_CS		(0x0 << 12)
++#define EBU_CON_BCGEN_INTEL		(0x1 << 12)
++#define EBU_CON_BCGEN_MOTOROLA		(0x2 << 12)
++#define EBU_CON_WAITWRC(cycles)		((cycles & 0x7) << 8)
++#define EBU_CON_WAITRDC(cycles)		((cycles & 0x3) << 6)
++#define EBU_CON_HOLDC(cycles)		((cycles & 0x3) << 4)
++#define EBU_CON_RECOVC(cycles)		((cycles & 0x3) << 2)
++#define EBU_CON_CMULT_1			0x0
++#define EBU_CON_CMULT_4			0x1
++#define EBU_CON_CMULT_8			0x2
++#define EBU_CON_CMULT_16		0x3
++
++#if defined(CONFIG_LTQ_NAND_CS0)
++#define ebu_region0_enable		1
++#else
++#define ebu_region0_enable		0
++#endif
++
++#if defined(CONFIG_LTQ_NAND_CS1)
++#define ebu_region1_enable		1
++#else
++#define ebu_region1_enable		0
++#endif
++
++struct ltq_ebu_regs {
++	u32	clc;
++	u32	rsvd0;
++	u32	id;
++	u32	rsvd1;
++	u32	con;
++	u32	rsvd2[3];
++	u32	addr_sel_0;
++	u32	addr_sel_1;
++	u32	rsvd3[14];
++	u32	con_0;
++	u32	con_1;
++};
++
++static struct ltq_ebu_regs *ltq_ebu_regs =
++	(struct ltq_ebu_regs *) CKSEG1ADDR(LTQ_EBU_BASE);
++
++void ltq_ebu_init(void)
++{
++	ltq_build_check_reg(struct ltq_ebu_regs, addr_sel_0, 0x20);
++	ltq_build_check_reg(struct ltq_ebu_regs, con_0, 0x60);
++
++	if (ebu_region0_enable) {
++		ltq_writel(&ltq_ebu_regs->addr_sel_0, LTQ_EBU_REGION0_BASE |
++			EBU_ADDRSEL_MASK(3) | EBU_ADDRSEL_REGEN);
++
++		ltq_writel(&ltq_ebu_regs->con_0, EBU_CON_SETUP |
++			EBU_CON_ALEC(3) | EBU_CON_WAITWRC(3) |
++			EBU_CON_WAITRDC(2) | EBU_CON_HOLDC(2) |
++			EBU_CON_RECOVC(2) | EBU_CON_CMULT_8);
++	} else {
++		ltq_clrbits(&ltq_ebu_regs->addr_sel_0, EBU_ADDRSEL_REGEN);
++	}
++
++	if (ebu_region1_enable) {
++		ltq_writel(&ltq_ebu_regs->addr_sel_1, LTQ_EBU_REGION1_BASE |
++			EBU_ADDRSEL_MASK(3) | EBU_ADDRSEL_REGEN);
++
++		ltq_writel(&ltq_ebu_regs->con_1, EBU_CON_SETUP |
++			EBU_CON_ALEC(3) | EBU_CON_WAITWRC(2) |
++			EBU_CON_WAITRDC(2) | EBU_CON_HOLDC(1) |
++			EBU_CON_RECOVC(1) | EBU_CON_CMULT_4);
++	} else {
++		ltq_clrbits(&ltq_ebu_regs->addr_sel_1, EBU_ADDRSEL_REGEN);
++	}
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/gphy.c b/arch/mips/cpu/mips32/xrx330/gphy.c
+new file mode 100644
+index 0000000000..e0ee4a30ec
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/gphy.c
+@@ -0,0 +1,40 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <malloc.h>
++#include <firmware.h>
++#include <asm/lantiq/io.h>
++#include <asm/arch/soc.h>
++#include <asm/arch/gphy.h>
++
++static void ltq_fw_load(const char *name, void *dst_addr)
++{
++	struct firmware fw;
++	int err;
++
++	err = request_firmware(&fw, name);
++	if (err)
++		return;
++
++	memcpy(dst_addr, fw.data, fw.size);
++	flush_cache((ulong)dst_addr, fw.size);
++}
++
++void ltq_gphy_phy11g_a21_load(void *addr)
++{
++	ltq_fw_load("lantiq/xrx300_phy11g_a21.fw", addr);
++}
++
++void ltq_gphy_phy22f_a21_load(void *addr)
++{
++	ltq_fw_load("lantiq/xrx300_phy22f_a21.fw", addr);
++}
++
++void *ltq_gphy_alloc(void)
++{
++	return memalign(LTQ_GPHY_FW_ALIGN, LTQ_GPHY_FW_SIZE);
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/mem.c b/arch/mips/cpu/mips32/xrx330/mem.c
+new file mode 100644
+index 0000000000..174a106dc5
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/mem.c
+@@ -0,0 +1,660 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/arch/soc.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/spl.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/lantiq/mem.h>
++#include <asm/lantiq/chipid.h>
++
++/* Must be configured in BOARDDIR */
++#include <ddr_settings.h>
++
++#define CCR00_START			(1 << 0)
++#define CCR01_MAX_COL_REG_SHIFT		8
++#define CCR01_MAX_COL_REG_MASK		(0xF << CCR01_MAX_COL_REG_SHIFT)
++#define CCR01_MAX_ROW_REG_MASK		0xF
++#define CCR31_ADDR_PINS_SHIFT		24
++#define CCR31_ADDR_PINS_MASK		(0x7 << CCR31_ADDR_PINS_SHIFT)
++#define CCR31_EIGHT_BANK_MODE		(1 << 16)
++#define CCR32_COLUMN_SIZE_MASK		0x7
++#define CCR35_CS_MAP_MASK		0xf
++#define CCR35_CS_MAP_CS1		0x1
++#define CCR35_CS_MAP_CS3		0x3
++#define CCR35_CS_MAP_CS15		0xf
++#define CCR37_INT_DDR_INIT_COMPLETE	(1 << 2)
++#define PHYR6_DLL_RD_DQ_DEL_NM_SHIFT	8
++#define PHYR6_DLL_RD_DQ_DEL_NM_MASK	(0xFF << PHYR6_DLL_RD_DQ_DEL_NM_SHIFT)
++#define PHYR7_DLL_WR_DQ_DEL_NM_SHIFT	8
++#define PHYR7_DLL_WR_DQ_DEL_NM_MASK	(0xFF << PHYR7_DLL_WR_DQ_DEL_NM_SHIFT)
++#define PHYR11_DLL_LOCK_IND		1
++
++#define DEFAULT_GATE_ECHO_DLL		0x20
++
++struct mc_global_regs {
++	u32 rsvd0[0x70];
++	u32 ddr_gsr0;		/* DDR SDRAM controller global status 0 */
++	u32 rsvd1;
++	u32 ddr_gcr0;		/* DDR SDRAM controller global control 0 */
++	u32 rsvd2;
++	u32 ddr_prio_in;	/* DDR SDRAM controller input port priority */
++	u32 rsvd3;
++	u32 ddr_echo_dll0;	/* DDR SDRAM controller echo gate DLL0 control */
++	u32 rsvd4;
++	u32 ddr_echo_dll1;	/* DDR SDRAM controller echo gate DLL1 control */
++};
++
++static struct mc_global_regs *mc_global_regs =
++	(void *) CKSEG1ADDR(LTQ_MC_GLOBAL_BASE);
++static void *mc_ddr_base = (void *) CKSEG1ADDR(LTQ_MC_DDR_BASE);
++static void *bootrom_base = (void *) CKSEG1ADDR(LTQ_BOOTROM_BASE);
++
++static __always_inline
++u32 mc_ccr_read(u32 index)
++{
++	return ltq_readl(mc_ddr_base + LTQ_MC_DDR_CCR_OFFSET(index));
++}
++
++static __always_inline
++void mc_ccr_write(u32 index, u32 val)
++{
++	ltq_writel(mc_ddr_base + LTQ_MC_DDR_CCR_OFFSET(index), val);
++}
++
++static __always_inline
++void mc_ccr_dump(u32 index)
++{
++	const void *addr = (void *)(mc_ddr_base + LTQ_MC_DDR_CCR_OFFSET(index));
++	spl_debug("CCR%02u: 0x%p = 0x%08x\n", index, addr, ltq_readl(addr));
++}
++
++static __always_inline
++u32 mc_phyr_read(u32 index)
++{
++	return ltq_readl(mc_ddr_base + LTQ_MC_DDR_PHYR_OFFSET(index));
++}
++
++static __always_inline
++void mc_phyr_write(u32 index, u32 val)
++{
++	ltq_writel(mc_ddr_base + LTQ_MC_DDR_PHYR_OFFSET(index), val);
++}
++
++static __always_inline
++void mc_phyr_dump(u32 index)
++{
++	const void *addr = (void *)(mc_ddr_base + LTQ_MC_DDR_PHYR_OFFSET(index));
++	spl_debug("PHYR%02u: 0x%p = 0x%08x\n", index, addr, ltq_readl(addr));
++}
++
++static __always_inline
++u32 bootrom_readl(u32 offset)
++{
++	return ltq_readl(bootrom_base + offset);
++}
++
++static __always_inline
++void bootrom_writel(u32 offset, u32 val)
++{
++	ltq_writel(bootrom_base + offset, val);
++}
++
++static __always_inline
++void mc_ddr_echo_dll_writel(unsigned int slice, unsigned int delay)
++{
++	if (slice)
++		ltq_writel(&mc_global_regs->ddr_echo_dll1, delay);
++	else
++		ltq_writel(&mc_global_regs->ddr_echo_dll0, delay);
++}
++
++static __always_inline
++void mc_halt(void)
++{
++	/*
++	 * Create multiple dummy accesses to ROM space to ensure the MIPS to
++	 * Xbar path is cleared of pending DDR SDRAM transactions.
++	 */
++	bootrom_writel(0, bootrom_readl(4));
++	bootrom_writel(4, bootrom_readl(8));
++	bootrom_writel(8, bootrom_readl(0));
++
++	/* Stop memory controller */
++	mc_ccr_write(0, MC_CCR00_VALUE & ~CCR00_START);
++}
++
++static __always_inline
++void mc_start(void)
++{
++	/* Start initialization sequence */
++	mc_ccr_write(0, MC_CCR00_VALUE | CCR00_START);
++
++#if 0
++	while (!(mc_ccr_read(37) & CCR37_INT_DDR_INIT_COMPLETE))
++		;
++#endif
++	/* Wait until DLL0 has locked */
++	while (!(mc_phyr_read(11) & PHYR11_DLL_LOCK_IND))
++		;
++
++	/* Wait until DLL1 has locked */
++	while (!(mc_phyr_read(14) & PHYR11_DLL_LOCK_IND))
++		;
++}
++
++static __always_inline
++void mc_init(void)
++{
++	/* Init MC DDR CCR and PHYR registers with values from ddr_settings.h */
++	mc_ccr_write(1, MC_CCR01_VALUE);
++	mc_ccr_write(2, MC_CCR02_VALUE);
++	mc_ccr_write(3, MC_CCR03_VALUE);
++	mc_ccr_write(4, MC_CCR04_VALUE);
++	mc_ccr_write(5, MC_CCR05_VALUE);
++	mc_ccr_write(6, MC_CCR06_VALUE);
++	mc_ccr_write(8, MC_CCR08_VALUE);
++	mc_ccr_write(9, MC_CCR09_VALUE);
++
++	mc_ccr_write(10, MC_CCR10_VALUE);
++	mc_ccr_write(11, MC_CCR11_VALUE);
++	mc_ccr_write(12, MC_CCR12_VALUE);
++	mc_ccr_write(13, MC_CCR13_VALUE);
++	mc_ccr_write(14, MC_CCR14_VALUE);
++	mc_ccr_write(15, MC_CCR15_VALUE);
++	mc_ccr_write(16, MC_CCR16_VALUE);
++	mc_ccr_write(17, MC_CCR17_VALUE);
++	mc_ccr_write(18, MC_CCR18_VALUE);
++	mc_ccr_write(19, MC_CCR19_VALUE);
++
++	mc_ccr_write(20, MC_CCR20_VALUE);
++	mc_ccr_write(21, MC_CCR21_VALUE);
++	mc_ccr_write(22, MC_CCR22_VALUE);
++	mc_ccr_write(23, MC_CCR23_VALUE);
++	mc_ccr_write(24, MC_CCR24_VALUE);
++	mc_ccr_write(25, MC_CCR25_VALUE);
++	mc_ccr_write(26, MC_CCR26_VALUE);
++	mc_ccr_write(27, MC_CCR27_VALUE);
++	mc_ccr_write(28, MC_CCR28_VALUE);
++	mc_ccr_write(29, MC_CCR29_VALUE);
++
++	mc_ccr_write(30, MC_CCR30_VALUE);
++	mc_ccr_write(31, MC_CCR31_VALUE);
++	mc_ccr_write(32, MC_CCR32_VALUE);
++	mc_ccr_write(33, MC_CCR33_VALUE);
++	mc_ccr_write(34, MC_CCR34_VALUE);
++	mc_ccr_write(35, MC_CCR35_VALUE);
++	mc_ccr_write(36, MC_CCR36_VALUE);
++	mc_ccr_write(37, MC_CCR37_VALUE);
++	mc_ccr_write(38, MC_CCR38_VALUE);
++	mc_ccr_write(39, MC_CCR39_VALUE);
++
++	mc_ccr_write(40, MC_CCR40_VALUE);
++	mc_ccr_write(41, MC_CCR41_VALUE);
++	mc_ccr_write(42, MC_CCR42_VALUE);
++	mc_ccr_write(43, MC_CCR43_VALUE);
++	mc_ccr_write(44, MC_CCR44_VALUE);
++	mc_ccr_write(45, MC_CCR45_VALUE);
++	mc_ccr_write(46, MC_CCR46_VALUE);
++	mc_ccr_write(47, MC_CCR47_VALUE);
++	mc_ccr_write(48, MC_CCR48_VALUE);
++	mc_ccr_write(49, MC_CCR49_VALUE);
++
++	mc_ccr_write(50, MC_CCR50_VALUE);
++	mc_ccr_write(51, MC_CCR51_VALUE);
++	mc_ccr_write(52, MC_CCR52_VALUE);
++	mc_ccr_write(53, MC_CCR53_VALUE);
++	mc_ccr_write(54, MC_CCR54_VALUE);
++	mc_ccr_write(55, MC_CCR55_VALUE);
++
++	mc_phyr_write(0, MC_PHYR0_VALUE);
++	mc_phyr_write(1, MC_PHYR1_VALUE);
++	mc_phyr_write(2, MC_PHYR2_VALUE);
++	mc_phyr_write(3, MC_PHYR3_VALUE);
++	mc_phyr_write(4, MC_PHYR4_VALUE);
++	mc_phyr_write(5, MC_PHYR5_VALUE);
++	mc_phyr_write(6, MC_PHYR6_VALUE);
++	mc_phyr_write(7, MC_PHYR7_VALUE);
++	mc_phyr_write(8, MC_PHYR8_VALUE);
++	mc_phyr_write(9, MC_PHYR9_VALUE);
++
++	if (ltq_soc_is_grx389_720()) {
++		mc_ccr_write(2, MC_CCR02_VALUE_360);
++		mc_ccr_write(3, MC_CCR03_VALUE_360);
++		mc_ccr_write(4, MC_CCR04_VALUE_360);
++		mc_ccr_write(5, MC_CCR05_VALUE_360);
++		mc_ccr_write(6, MC_CCR06_VALUE_360);
++		mc_ccr_write(8, MC_CCR08_VALUE_360);
++		mc_ccr_write(10, MC_CCR10_VALUE_360);
++		mc_ccr_write(12, MC_CCR12_VALUE_360);
++		mc_ccr_write(14, MC_CCR14_VALUE_360);
++		mc_ccr_write(21, MC_CCR21_VALUE_360);
++		mc_ccr_write(24, MC_CCR24_VALUE_360);
++		mc_ccr_write(54, MC_CCR54_VALUE_360);
++
++		mc_phyr_write(6, MC_PHYR6_VALUE_360);
++		mc_phyr_write(8, MC_PHYR8_VALUE_360);
++	}
++
++	/* Set initial values for gate echo DLL */
++	mc_ddr_echo_dll_writel(0, DEFAULT_GATE_ECHO_DLL);
++	mc_ddr_echo_dll_writel(1, DEFAULT_GATE_ECHO_DLL);
++}
++
++void ltq_mem_init(void)
++{
++	mc_halt();
++	mc_init();
++	mc_start();
++}
++
++static phys_size_t mc_sdram_size(void)
++{
++	unsigned int max_col_reg, max_row_reg, column_size, addr_pins;
++	unsigned int banks, cs_map, cs;
++	phys_size_t size;
++
++	banks = (mc_ccr_read(31) & CCR31_EIGHT_BANK_MODE) ? 8 : 4;
++
++	cs_map = mc_ccr_read(35) & CCR35_CS_MAP_MASK;
++	cs = fls(cs_map);
++
++	column_size = mc_ccr_read(32) & CCR32_COLUMN_SIZE_MASK;
++
++	addr_pins = (mc_ccr_read(31) & CCR31_ADDR_PINS_MASK) >>
++		CCR31_ADDR_PINS_SHIFT;
++
++	max_col_reg = (mc_ccr_read(1) & CCR01_MAX_COL_REG_MASK) >>
++		CCR01_MAX_COL_REG_SHIFT;
++
++	max_row_reg = mc_ccr_read(1) & CCR01_MAX_ROW_REG_MASK;
++
++	/*
++	 * size (bytes) = 2 ^ rowsize * 2 ^ colsize * banks * chipselects
++	 *                 * datawidth (bytes)
++	 */
++	size = (2 << (max_col_reg - column_size - 1)) *
++		(2 << (max_row_reg - addr_pins - 1)) * banks * cs * 2;
++
++	return size;
++}
++
++static void test_dump(const u8 *buf, unsigned int start, unsigned int stop)
++{
++	unsigned int i;
++
++	for (i = start; i < stop; i++) {
++		if (buf[i])
++			putc('1');
++		else
++			putc('0');
++
++		if (i % 16 == 15)
++			putc('\n');
++		else
++			putc(' ');
++	}
++}
++
++static __always_inline void mc_rd_dq_writel(unsigned int slice,
++						unsigned int delay)
++{
++	unsigned int offset = 6 + 2 * slice;
++	u32 val;
++
++	val = mc_phyr_read(offset);
++	val &= ~PHYR6_DLL_RD_DQ_DEL_NM_MASK;
++	val |= delay << PHYR6_DLL_RD_DQ_DEL_NM_SHIFT;
++	mc_phyr_write(offset, val);
++}
++
++static __always_inline void mc_wr_dq_writel(unsigned int slice,
++						unsigned int delay)
++{
++	unsigned int offset = 7 + 2 * slice;
++	u32 val;
++
++	val = mc_phyr_read(offset);
++	val &= ~PHYR7_DLL_WR_DQ_DEL_NM_MASK;
++	val |= delay << PHYR7_DLL_WR_DQ_DEL_NM_SHIFT;
++	mc_phyr_write(offset, val);
++}
++
++int mc_tune_perform(struct mc_tune_cfg *cfg)
++{
++	const phys_size_t sdram_size = mc_sdram_size();
++	const unsigned int read_max_q = 0x2b;
++	const unsigned int read_min_q = 0x15;
++	const unsigned int read_max = 0x3f;
++	const unsigned int read_min = 0x00;
++	const unsigned int write_q = 0x1f;
++	const unsigned int write_max = 0x3f;
++	const unsigned int write_min = 0x00;
++	const unsigned int echo_dll_size = 0x80;
++	const unsigned int echo_dll_init = 0x20;
++	unsigned int i, dq;
++	unsigned int read_dq_l, read_dq_u, write_dq_l, write_dq_u;
++	unsigned int echo_dll_l, echo_dll_u;
++	unsigned int min_l, max_l, min_u, max_u;
++	u8 test_u[128], test_l[128];
++	int ret;
++
++#if 0
++	mc_phyr_dump(6);
++	mc_phyr_dump(7);
++	mc_phyr_dump(8);
++	mc_phyr_dump(9);
++#endif
++
++	mc_ddr_echo_dll_writel(0, echo_dll_init);
++	mc_ddr_echo_dll_writel(1, echo_dll_init);
++
++	/* initial read DQ delay tuning */
++	min_l = read_max_q;
++	max_l = read_min_q;
++	min_u = read_max_q;
++	max_u = read_min_q;
++
++	for (i = 0; i < 15; i++) {
++		mc_halt();
++		mc_wr_dq_writel(0, write_q + i);
++		mc_wr_dq_writel(1, write_q + i);
++
++		for (dq = read_min_q; dq < read_max_q; dq++) {
++			mc_halt();
++			mc_rd_dq_writel(0, dq);
++			mc_rd_dq_writel(1, dq);
++			mc_start();
++			__udelay(100);
++
++			ret = ltq_mem_test_tune(sdram_size, 0, 1);
++			if (ret == 0) {
++				if (min_l > dq)
++					min_l = dq;
++
++				if (max_l < dq)
++					max_l = dq;
++			}
++
++			ret = ltq_mem_test_tune(sdram_size, 1, 1);
++			if (ret == 0) {
++				if (min_u > dq)
++					min_u = dq;
++
++				if (max_u < dq)
++					max_u = dq;
++			}
++		}
++	}
++
++	if (max_l > min_l) {
++		read_dq_l = (min_l + max_l) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable initial read DQS delay for slice #0\n");
++		goto err;
++	}
++
++	if (max_u > min_u) {
++		read_dq_u = (min_u + max_u) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable initial read DQS delay for slice #1\n");
++		goto err;
++	}
++
++	/* gate echo DLL tuning */
++	min_l = echo_dll_size;
++	max_l = 0;
++	min_u = echo_dll_size;
++	max_u = 0;
++
++	if (spl_mc_tune_debug) {
++		memset(test_l, 0, sizeof(test_l));
++		memset(test_u, 0, sizeof(test_u));
++	}
++
++	for (i = 0; i < echo_dll_size; i++) {
++		mc_ddr_echo_dll_writel(0, i);
++		mc_ddr_echo_dll_writel(1, i);
++		cpu_sync();
++
++		ret = ltq_mem_test_tune(sdram_size, 0, 0);
++		if (ret == 0) {
++			if (min_l > i)
++				min_l = i;
++
++			if (max_l < i)
++				max_l = i;
++
++			if (spl_mc_tune_debug)
++				test_l[i] = 1;
++		}
++
++		ret = ltq_mem_test_tune(sdram_size, 1, 0);
++		if (ret == 0) {
++			if (min_u > i)
++				min_u = i;
++
++			if (max_u < i)
++				max_u = i;
++
++			if (spl_mc_tune_debug)
++				test_u[i] = 1;
++		}
++	}
++
++	if (max_l > min_l) {
++		echo_dll_l = (min_l + max_l) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable echo DLL delay for slice #0\n");
++		goto err;
++	}
++
++	if (max_u > min_u) {
++		echo_dll_u = (min_u + max_u) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable echo DLL delay for slice #1\n");
++		goto err;
++	}
++
++	if (spl_mc_tune_debug) {
++		printf("\nEcho DLL delay slice 0: %02x\n", echo_dll_l);
++		test_dump(test_l, 0, echo_dll_size);
++		printf("\nEcho DLL delay slice 1: %02x\n", echo_dll_u);
++		test_dump(test_u, 0, echo_dll_size);
++	}
++
++	mc_ddr_echo_dll_writel(0, echo_dll_l);
++	mc_ddr_echo_dll_writel(1, echo_dll_u);
++	cpu_sync();
++
++	/* write data eye tuning */
++	min_l = write_max;
++	max_l = write_min;
++	min_u = write_max;
++	max_u = write_min;
++
++	if (spl_mc_tune_debug) {
++		memset(test_l, 0, sizeof(test_l));
++		memset(test_u, 0, sizeof(test_u));
++	}
++
++	mc_halt();
++	mc_rd_dq_writel(0, read_dq_l);
++	mc_rd_dq_writel(1, read_dq_u);
++
++	for (dq = write_min; dq < write_max; dq++) {
++		mc_halt();
++		mc_wr_dq_writel(0, dq);
++		mc_wr_dq_writel(1, dq);
++		mc_start();
++		__udelay(100);
++
++		ret = ltq_mem_test_tune(sdram_size, 0, 0);
++		if (ret == 0) {
++			if (min_l > dq)
++				min_l = dq;
++
++			if (max_l < dq)
++				max_l = dq;
++
++			if (spl_mc_tune_debug)
++				test_l[dq] = 1;
++		}
++
++		ret = ltq_mem_test_tune(sdram_size, 1, 0);
++		if (ret == 0) {
++			if (min_u > dq)
++				min_u = dq;
++
++			if (max_u < dq)
++				max_u = dq;
++
++			if (spl_mc_tune_debug)
++				test_u[dq] = 1;
++		}
++	}
++
++	if (max_l > min_l) {
++		write_dq_l = (min_l + max_l) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable write DQS delay for slice #0\n");
++		goto err;
++	}
++
++	if (max_u > min_u) {
++		write_dq_u = (min_u + max_u) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable write DQS delay for slice #1\n");
++		goto err;
++	}
++
++	if (spl_mc_tune_debug) {
++		printf("\nWrite DQ delay slice 0: %02x\n", write_dq_l);
++		test_dump(test_l, write_min, write_max + 1);
++		printf("\nWrite DQ delay slice 1: %02x\n", write_dq_u);
++		test_dump(test_u, write_min, write_max + 1);
++	}
++
++	/* read data eye tuning */
++	min_l = read_max;
++	max_l = read_min;
++	min_u = read_max;
++	max_u = read_min;
++
++	if (spl_mc_tune_debug) {
++		memset(test_l, 0, sizeof(test_l));
++		memset(test_u, 0, sizeof(test_u));
++	}
++
++	mc_halt();
++	mc_wr_dq_writel(0, write_dq_l);
++	mc_wr_dq_writel(1, write_dq_u);
++
++	for (dq = read_min_q; dq < read_max_q; dq++) {
++		mc_halt();
++		mc_rd_dq_writel(0, dq);
++		mc_rd_dq_writel(1, dq);
++		mc_start();
++		__udelay(100);
++
++		ret = ltq_mem_test_tune(sdram_size, 0, 0);
++		if (ret == 0) {
++			if (min_l > dq)
++				min_l = dq;
++
++			if (max_l < dq)
++				max_l = dq;
++
++			if (spl_mc_tune_debug)
++				test_l[dq] = 1;
++		}
++
++		ret = ltq_mem_test_tune(sdram_size, 1, 0);
++		if (ret == 0) {
++			if (min_u > dq)
++				min_u = dq;
++
++			if (max_u < dq)
++				max_u = dq;
++
++			if (spl_mc_tune_debug)
++				test_u[dq] = 1;
++		}
++	}
++
++	if (max_l > min_l) {
++		read_dq_l = (min_l + max_l) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable read DQS delay for slice #0\n");
++		goto err;
++	}
++
++	if (max_u > min_u) {
++		read_dq_u = (min_u + max_u) >> 1;
++	} else {
++		spl_puts("MEM: failed to determine a suitable read DQS delay for slice #1\n");
++		goto err;
++	}
++
++	if (spl_mc_tune_debug) {
++		printf("\nRead DQ delay slice 0: %02x\n", read_dq_l);
++		test_dump(test_l, read_min, read_max + 1);
++		printf("\nRead DQ delay slice 1: %02x\n", read_dq_u);
++		test_dump(test_u, read_min, read_max + 1);
++	}
++
++	mc_halt();
++	mc_rd_dq_writel(0, read_dq_l);
++	mc_rd_dq_writel(1, read_dq_u);
++	mc_start();
++
++	cfg->gate_echo_dll_l = echo_dll_l;
++	cfg->gate_echo_dll_u = echo_dll_u;
++	cfg->write_dqs_delay_l = write_dq_l;
++	cfg->write_dqs_delay_u = write_dq_u;
++	cfg->read_dqs_delay_l = read_dq_l;
++	cfg->read_dqs_delay_u = read_dq_u;
++	cfg->state = MC_TUNE_VALID;
++
++	return 0;
++
++err:
++	/* restore original values */
++	cfg->state = MC_TUNE_INVALID;
++	mc_halt();
++	if (ltq_soc_is_grx389_720()) {
++		mc_phyr_write(6, MC_PHYR6_VALUE_360);
++		mc_phyr_write(8, MC_PHYR8_VALUE_360);
++	} else {
++		mc_phyr_write(6, MC_PHYR6_VALUE);
++		mc_phyr_write(8, MC_PHYR8_VALUE);
++	}
++	mc_phyr_write(7, MC_PHYR7_VALUE);
++	mc_phyr_write(9, MC_PHYR9_VALUE);
++	mc_ddr_echo_dll_writel(0, DEFAULT_GATE_ECHO_DLL);
++	mc_ddr_echo_dll_writel(1, DEFAULT_GATE_ECHO_DLL);
++	mc_start();
++
++	return 1;
++}
++
++void mc_tune_apply(const struct mc_tune_cfg *cfg)
++{
++	mc_halt();
++	mc_ddr_echo_dll_writel(0, cfg->gate_echo_dll_l);
++	mc_ddr_echo_dll_writel(1, cfg->gate_echo_dll_u);
++	mc_wr_dq_writel(0, cfg->write_dqs_delay_l);
++	mc_wr_dq_writel(1, cfg->write_dqs_delay_u);
++	mc_rd_dq_writel(0, cfg->read_dqs_delay_l);
++	mc_rd_dq_writel(1, cfg->read_dqs_delay_u);
++	mc_start();
++}
++
++phys_size_t initdram(int board_type)
++{
++	return mc_sdram_size();
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/pmu.c b/arch/mips/cpu/mips32/xrx330/pmu.c
+new file mode 100644
+index 0000000000..0e52825b2f
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/pmu.c
+@@ -0,0 +1,121 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/pm.h>
++#include <asm/arch/soc.h>
++
++#define PMU_PWDCR_GPHY2		(1 << 31)
++#define PMU_PWDCR_GPHY1		(1 << 30)
++#define PMU_PWDCR_GPHY0		(1 << 29)
++#define PMU_PWDCR_SWITCH	(1 << 28)
++#define PMU_PWDCR_USB1		(1 << 27)
++#define PMU_PWDCR_GPHY3		(1 << 26)
++#define PMU_PWDCR_TDM		(1 << 25)
++#define PMU_PWDCR_PPE_DP	(1 << 23)
++#define PMU_PWDCR_PPE_EMA	(1 << 22)
++#define PMU_PWDCR_DEU		(1 << 20)
++#define PMU_PWDCR_GPHY_25M	(1 << 19)
++#define PMU_PWDCR_PCIE		(1 << 18)
++#define PMU_PWDCR_UART1		(1 << 17)
++#define PMU_PWDCR_GPTC		(1 << 12)
++#define PMU_PWDCR_LEDC		(1 << 11)
++#define PMU_PWDCR_EBU		(1 << 10)
++#define PMU_PWDCR_SPI		(1 << 8)
++#define PMU_PWDCR_USIF		(1 << 7)
++#define PMU_PWDCR_USB0		(1 << 6)
++#define PMU_PWDCR_DMA		(1 << 5)
++#define PMU_PWDCR_DFEV1		(1 << 3)
++#define PMU_PWDCR_DFEV0		(1 << 2)
++
++struct ltq_pmu_regs {
++	u32	rsvd0[8];
++	u32	clkgsr1;
++	u32	clkgcr1_a;
++	u32	clkgcr1_b;
++	u32	rsvd1;
++	u32	clkgsr2;
++	u32	clkgcr2_a;
++	u32	clkgcr2_b;
++	u32	rsvd2;
++	u32	analog_sr;
++	u32	analog_cr_a;
++	u32	analog_cr_b;
++};
++
++static struct ltq_pmu_regs *ltq_pmu_regs =
++	(struct ltq_pmu_regs *) CKSEG1ADDR(LTQ_PMU_BASE);
++
++u32 ltq_pm_map(enum ltq_pm_modules module)
++{
++	u32 val;
++
++	switch (module) {
++	case LTQ_PM_CORE:
++		val = PMU_PWDCR_UART1 | PMU_PWDCR_LEDC | PMU_PWDCR_EBU;
++		break;
++	case LTQ_PM_DMA:
++		val = PMU_PWDCR_DMA;
++		break;
++	case LTQ_PM_ETH:
++		val = PMU_PWDCR_GPHY3 | PMU_PWDCR_GPHY2 | PMU_PWDCR_GPHY1 |
++			PMU_PWDCR_GPHY0 | PMU_PWDCR_SWITCH | PMU_PWDCR_PPE_DP |
++			 PMU_PWDCR_PPE_EMA;
++		break;
++	case LTQ_PM_SPI:
++		val = PMU_PWDCR_SPI;
++		break;
++	default:
++		val = 0;
++		break;
++	}
++
++	return val;
++}
++
++int ltq_pm_enable(enum ltq_pm_modules module)
++{
++	const unsigned long timeout = 1000;
++	unsigned long timebase;
++	u32 sr, val;
++
++	val = ltq_pm_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_setbits(&ltq_pmu_regs->clkgcr1_a, val);
++
++	timebase = get_timer(0);
++
++	do {
++		sr = ltq_readl(&ltq_pmu_regs->clkgsr1);
++		if (~sr & val)
++			return 0;
++	} while (get_timer(timebase) < timeout);
++
++	return 1;
++}
++
++int ltq_pm_disable(enum ltq_pm_modules module)
++{
++	u32 val;
++
++	val = ltq_pm_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_setbits(&ltq_pmu_regs->clkgcr1_b, val);
++
++	return 0;
++}
++
++void ltq_pmu_init(void)
++{
++	u32 pm = ltq_pm_map(LTQ_PM_CORE);
++
++	ltq_setbits(&ltq_pmu_regs->clkgcr1_a, pm);
++}
+diff --git a/arch/mips/cpu/mips32/xrx330/rcu.c b/arch/mips/cpu/mips32/xrx330/rcu.c
+new file mode 100644
+index 0000000000..e6d61319cb
+--- /dev/null
++++ b/arch/mips/cpu/mips32/xrx330/rcu.c
+@@ -0,0 +1,326 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/lantiq/io.h>
++#include <asm/lantiq/reset.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/arch/soc.h>
++#include <asm/arch/nand.h>
++#include <asm/arch/switch.h>
++
++#define RCU_REQ_GPHY0		(1 << 31)	/* GPHY0 */
++#define RCU_REQ_SRST		(1 << 30)	/* Global SW Reset */
++#define RCU_REQ_GPHY1		(1 << 29)	/* GPHY1 */
++#define RCU_REQ_GPHY2		(1 << 28)	/* GPHY2 */
++#define RCU_REQ_PCIE2		(1 << 27)	/* PCIE2 core */
++#define RCU_REQ_LDO_PD		(1 << 26)	/* Power down linear regulator */
++#define RCU_REQ_ENDINIT		(1 << 25)	/* Enable FPI slave bus access */
++#define RCU_REQ_WLAN		(1 << 24)	/* WLAN */
++#define RCU_REQ_PCIE1		(1 << 22)	/* PCIE1 core */
++#define RCU_REQ_ETHSW		(1 << 21)	/* Ethernet switch */
++#define RCU_REQ_TDM		(1 << 19)	/* TDM */
++#define RCU_REQ_NMI_PLL1	(1 << 18)	/* Enable NMI of PLL1 */
++#define RCU_REQ_BB_SPI_EN	(1 << 17)	/* Enable baseband CPU SPI */
++#define RCU_REQ_HSNAND		(1 << 16)	/* HSNAND controller */
++#define RCU_REQ_NMI_PLL0	(1 << 15)	/* Enable NMI of PLL0 */
++#define RCU_REQ_XBAR		(1 << 14)	/* Crossbar */
++#define RCU_REQ_PCIE2_PHY	(1 << 13)	/* PCIE2 PHY */
++#define RCU_REQ_PCIE1_PHY	(1 << 12)	/* PCIE1 PHY */
++#define RCU_REQ_BB_UART_EN	(1 << 11)	/* Enable baseband CPU UART */
++#define RCU_REQ_GPHY3		(1 << 10)	/* GPHY3 */
++#define RCU_REQ_DMA		(1 << 9)	/* DMA core */
++#define RCU_REQ_PPE		(1 << 8)	/* PPE core */
++#define RCU_REQ_NMI_PLL2	(1 << 7)	/* Enable NMI of PLL2 */
++#define RCU_REQ_AHB		(1 << 6)	/* AHB bus */
++#define RCU_REQ_HRST_CFG	(1 << 5)	/* HW reset configuration */
++#define RCU_REQ_USB0		(1 << 4)	/* USB0 core and PHY */
++#define RCU_REQ_USB1		(1 << 3)	/* USB1 core and PHY */
++#define RCU_REQ_FPI		(1 << 2)	/* FPI bus */
++#define RCU_REQ_CPU		(1 << 1)	/* CPU subsystem */
++#define RCU_REQ_HRST		(1 << 0)	/* HW reset via HRST pin */
++#define RCU_REQ2_PCIE3_PHY	(1 << 29)	/* PCIE3 PHY */
++#define RCU_REQ2_PCIE3		(1 << 28)	/* PCIE3 core */
++#define RCU_REQ2_PHY3		(1 << 27)	/* PHY3 */
++#define RCU_REQ2_P2D		(1 << 26)	/* PMAC to DPlus module */
++#define RCU_REQ2_D2P		(1 << 25)	/* DPlus to PMAC module */
++#define RCU_REQ2_FUSE		(1 << 23)	/* FUSE bits */
++#define RCU_REQ2_MFPI2		(1 << 22)	/* Master FPI bus 2 */
++#define RCU_REQ2_MFPI1		(1 << 21)	/* Master FPI bus 1 */
++#define RCU_REQ2_SAHB3		(1 << 20)	/* Slave AHB bus 3 */
++#define RCU_REQ2_SAHB2		(1 << 19)	/* Slave AHB bus 2 */
++#define RCU_REQ2_SAHB1		(1 << 18)	/* Slave AHB bus 1 */
++#define RCU_REQ2_TEMPS		(1 << 12)	/* Temperature sensor */
++#define RCU_REQ2_WLAN_CG	(1 << 9)	/* WLAN clock generation */
++#define RCU_REQ2_PHY2		(1 << 8)	/* PHY2 */
++#define RCU_REQ2_PHY0		(1 << 7)	/* PHY0 */
++#define RCU_REQ2_PHY1		(1 << 6)	/* PHY1 */
++#define RCU_REQ2_USB1_PHY	(1 << 5)	/* USB1 PHY */
++#define RCU_REQ2_USB0_PHY	(1 << 4)	/* USB0 PHY */
++#define RCU_REQ2_SLIC		(1 << 0)	/* SLIC1 and SLIC2 */
++
++#define RCU_STAT_GPIOLATCH_SHIFT	18	/* GPIOs 36, 17, 15 */
++#define RCU_STAT_GPIOLATCH_MASK		(0x7 << RCU_STAT_GPIOLATCH_SHIFT)
++#define RCU_STAT_BOOTMODE0		(1 << 17)
++#define RCU_STAT2_WLAN_HW		(1 << 9)
++
++#define RCU_GP_STRAP_ECC_4BYTE	(1 << 25)
++#define RCU_GP_STRAP_ECC_OFF	(1 << 23)
++#define RCU_GP_STRAP_BOOTMODE3	(1 << 19)
++#define RCU_GP_STRAP_BOOTMODE2	(1 << 14)
++#define RCU_GP_STRAP_ECC_NO_OOB	(1 << 6)
++#define RCU_GP_STRAP_NAND_BE	(1 << 4)
++#define RCU_GP_STRAP_BOOTMODE1	(1 << 3)
++
++#define RFUSE_CNT		6
++#define RFUSE_SWITCH		(0x3 << 17)
++
++struct ltq_rcu_regs {
++	u32	rsvd0[4];
++	u32	req;		/* Reset request */
++	u32	stat;		/* Reset status */
++	u32	usb0_cfg;	/* USB0 config */
++	u32	gp_strap;	/* GPIO strapping */
++	u32	gfs_add0;	/* GPHY0 firmware base address */
++	u32	stat2;		/* Reset status 2 */
++	u32	ppm;		/* Protected platform mode */
++	u32	ppe_conf;	/* PPE ethernet config */
++	u32	pciephy1_con;	/* PCIE1 PHY config */
++	u32	usb1_cfg;	/* USB1 config */
++	u32	usb_ana_cfg1a;	/* USB analog config 1a */
++	u32	usb_ana_cfg1b;	/* USB analog config 1b */
++	u32	gcc;		/* General CPU config */
++	u32	gfmdio_add;	/* GPHY MDIO address */
++	u32	req2;		/* Reset request 2 */
++	u32	endian;		/* Endianess config */
++	u32	pcie_cfg_pwr;	/* PCIE power config */
++	u32	pcie1_cfg_pwr;	/* PCIE1 power config */
++	u32	gfs_add1;	/* GPHY1 firmware base address */
++	u32	pciephy2_con;	/* PCIE2 PHY config */
++	u32	rsvd1[19];
++	u32	gfs_add2;	/* GPHY2 firmware base address */
++};
++
++struct ltq_rcu2_regs {
++	u32	rsvd0[24];
++	u32	pciephy3_con;	/* PCIE3 PHY config */
++	u32	gfs_add3;	/* GPHY3 firmware base address */
++	u32	gf3mdio_add;	/* GPHY3 MDIO address */
++	u32	pcie3_cfg_pwr;	/* PCIE3 power config */
++};
++
++static struct ltq_rcu_regs *ltq_rcu_regs =
++	(struct ltq_rcu_regs *) CKSEG1ADDR(LTQ_RCU_BASE);
++
++static struct ltq_rcu2_regs *ltq_rcu2_regs =
++	(struct ltq_rcu2_regs *) CKSEG1ADDR(LTQ_RCU2_BASE);
++
++u32 ltq_reset_map(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	switch (module) {
++	case LTQ_RESET_SOFT:
++		val = RCU_REQ_SRST;
++		break;
++	case LTQ_RESET_CORE:
++		val = RCU_REQ_SRST | RCU_REQ_CPU | RCU_REQ_GPHY3 |
++			RCU_REQ_GPHY2 | RCU_REQ_GPHY1 | RCU_REQ_GPHY0;
++		break;
++	case LTQ_RESET_DMA:
++		val = RCU_REQ_DMA;
++		break;
++	case LTQ_RESET_ETH:
++		val = RCU_REQ_PPE | RCU_REQ_ETHSW;
++		break;
++	case LTQ_RESET_PHY:
++		val = RCU_REQ_GPHY3 | RCU_REQ_GPHY2 | RCU_REQ_GPHY1 |
++			RCU_REQ_GPHY0;
++		break;
++	case LTQ_RESET_HARD:
++		val = RCU_REQ_HRST;
++		break;
++	default:
++		val = 0;
++		break;
++	}
++
++	return val;
++}
++
++int ltq_reset_activate(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	val = ltq_reset_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_setbits(&ltq_rcu_regs->req, val);
++
++	return 0;
++}
++
++int ltq_reset_deactivate(enum ltq_reset_modules module)
++{
++	u32 val;
++
++	val = ltq_reset_map(module);
++	if (unlikely(!val))
++		return 1;
++
++	ltq_clrbits(&ltq_rcu_regs->req, val);
++
++	return 0;
++}
++
++enum ltq_boot_select ltq_boot_select(void)
++{
++	u32 stat, gp_strap;
++	unsigned int bootstrap;
++
++	stat = ltq_readl(&ltq_rcu_regs->stat);
++	gp_strap = ltq_readl(&ltq_rcu_regs->gp_strap);
++
++	bootstrap = !!(stat & RCU_STAT_BOOTMODE0);
++	bootstrap |= !!(gp_strap & RCU_GP_STRAP_BOOTMODE1) << 1;
++	bootstrap |= !!(gp_strap & RCU_GP_STRAP_BOOTMODE2) << 2;
++	bootstrap |= !!(gp_strap & RCU_GP_STRAP_BOOTMODE3) << 3;
++
++	switch (bootstrap) {
++	case 0x2:
++		return BOOT_UART_NO_EEPROM;
++	case 0x4:
++		return BOOT_UART;
++	case 0x5:
++		return BOOT_SPI;
++	case 0x6:
++		return BOOT_NAND;
++	case 0x8:
++		return BOOT_NAND_SAMSUNG_2K;
++	case 0x9:
++		return BOOT_NAND_SAMSUNG_1K;
++	case 0xa:
++		return BOOT_HSNAND_SAMSUNG_2K;
++	case 0xb:
++		return BOOT_HSNAND_SAMSUNG_1K;
++	case 0xe:
++		return BOOT_HSNAND_ONFI;
++	default:
++		return BOOT_UNKNOWN;
++	}
++}
++
++unsigned int ltq_boot_hsnand_info(void)
++{
++	u32 gp_strap;
++	enum ltq_boot_select boot_sel;
++	unsigned int flags = 0;
++
++	gp_strap = ltq_readl(&ltq_rcu_regs->gp_strap);
++	boot_sel = ltq_boot_select();
++
++	if (gp_strap & RCU_GP_STRAP_ECC_4BYTE)
++		flags |= HSNAND_ECC_4BYTE;
++
++	if (gp_strap & RCU_GP_STRAP_ECC_OFF)
++		flags |= HSNAND_ECC_OFF;
++
++	if (gp_strap & RCU_GP_STRAP_ECC_NO_OOB)
++		flags |= HSNAND_ECC_NO_OOB;
++
++	if (gp_strap & RCU_GP_STRAP_NAND_BE)
++		flags |= HSNAND_BIG_ENDIAN;
++
++	switch (boot_sel) {
++	case BOOT_HSNAND_SAMSUNG_2K:
++		flags |= HSNAND_SAMSUNG_2K;
++		break;
++	case BOOT_HSNAND_SAMSUNG_1K:
++		flags |= HSNAND_SAMSUNG_1K;
++		break;
++	case BOOT_HSNAND_ONFI:
++		flags |= HSNAND_ONFI;
++		break;
++	default:
++		break;
++	}
++
++	return flags;
++}
++
++void ltq_rcu_gphy_boot(unsigned int id, const void *addr)
++{
++	u32 module;
++	void *gfs_add;
++
++	switch (id) {
++	case 0:
++		module = RCU_REQ_GPHY0;
++		gfs_add = &ltq_rcu_regs->gfs_add0;
++		break;
++	case 1:
++		module = RCU_REQ_GPHY1;
++		gfs_add = &ltq_rcu_regs->gfs_add1;
++		break;
++	case 2:
++		module = RCU_REQ_GPHY2;
++		gfs_add = &ltq_rcu_regs->gfs_add2;
++		break;
++	case 3:
++		module = RCU_REQ_GPHY3;
++		gfs_add = &ltq_rcu2_regs->gfs_add3;
++		break;
++	default:
++		BUG();
++	}
++
++	/* Stop and reset GPHY */
++	ltq_setbits(&ltq_rcu_regs->req, module);
++
++	/* Configure firmware and boot address */
++	ltq_writel(gfs_add, CPHYSADDR((ulong)addr));
++
++	/* Start GPHY by releasing reset */
++	ltq_clrbits(&ltq_rcu_regs->req, module);
++}
++
++void __weak switch_mem_fix(u32 mem_id, u32 rar0_1, u32 addr)
++{
++}
++
++static const void *to_rfuse_addr(unsigned int index)
++{
++	return (const void *)(CKSEG1ADDR(LTQ_PPE_SW_WLAN_RFUSE_BASE) +
++		4 * index);
++}
++
++void ltq_reset_switch_mem_repair(void)
++{
++	unsigned int i;
++	u32 rfuse_bits;
++
++	/* bring WLAN on-chip module out of reset state */
++	ltq_clrbits(&ltq_rcu_regs->req, RCU_REQ_WLAN);
++	ltq_clrbits(&ltq_rcu_regs->req2, RCU_REQ2_WLAN_CG);
++
++	while (ltq_readl(&ltq_rcu_regs->stat2) & RCU_STAT2_WLAN_HW)
++		;
++
++	/* enable read of fuse bits */
++	ltq_setbits(&ltq_rcu_regs->req2, RCU_REQ2_FUSE);
++
++	for (i = 0; i < RFUSE_CNT; i++) {
++		rfuse_bits = ltq_readl(to_rfuse_addr(i));
++
++		if (rfuse_bits & RFUSE_SWITCH)
++			switch_mem_fix((rfuse_bits >> 14) & 0xf,
++				(rfuse_bits >> 13) & 0x1, rfuse_bits & 0x1fff);
++	}
++
++	/* disable read of fuse bits */
++	ltq_clrbits(&ltq_rcu_regs->req2, RCU_REQ2_FUSE);
++}
+diff --git a/arch/mips/include/asm/arch-xrx330/config.h b/arch/mips/include/asm/arch-xrx330/config.h
+new file mode 100644
+index 0000000000..fc28863922
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/config.h
+@@ -0,0 +1,140 @@
++/*
++ * Copyright (C) 2015-2016 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Common board configuration for Lantiq XWAY xRX330 family
++ */
++
++#ifndef __XRX330_CONFIG_H__
++#define __XRX330_CONFIG_H__
++
++/* CPU and SoC type */
++#define CONFIG_SOC_LANTIQ
++#define CONFIG_SOC_XWAY_XRX330
++
++/* Cache configuration */
++#define CONFIG_SYS_MIPS_CACHE_MODE	CONF_CM_CACHABLE_NONCOHERENT
++#define CONFIG_SYS_MIPS_CACHE_BASE	0x9fc00000
++#define CONFIG_SYS_MIPS_CACHE_INIT_RAM_LOAD
++
++#define CONFIG_SYS_MALLOC_LEN		6 * 1024 * 1024
++
++/*
++ * Supported clock modes
++ */
++#define LTQ_CLK_CPU_720_DDR_360		0
++#define LTQ_CLK_CPU_600_DDR_300		1
++#define LTQ_CLK_CPU_300_DDR_300		2
++#define LTQ_CLK_CPU_300_DDR_150		3
++#define LTQ_CLK_CPU_150_DDR_150		4
++
++/* CPU speed */
++#ifndef CONFIG_SYS_CLOCK_MODE
++#define CONFIG_SYS_CLOCK_MODE		LTQ_CLK_CPU_600_DDR_300
++#endif
++#define CONFIG_SYS_HZ			1000
++
++/* RAM */
++#define CONFIG_SYS_SDRAM_BASE		0x80000000
++#define CONFIG_SYS_SDRAM_BASE_UC	0xa0000000
++#define CONFIG_SYS_MEMTEST_START	0x81000000
++#define CONFIG_SYS_MEMTEST_END		0x82000000
++#define CONFIG_SYS_LOAD_ADDR		0x81000000
++#define CONFIG_SYS_LOAD_SIZE		(2 * 1024 * 1024)
++#define CONFIG_SYS_INIT_SP_OFFSET	(32 * 1024)
++
++/* SRAM */
++#define CONFIG_SYS_SRAM_BASE		0xBE1A0000
++#define CONFIG_SYS_SRAM_SIZE		0x10000
++
++/* ASC/UART driver and console */
++#define CONFIG_LANTIQ_SERIAL
++#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++/* GPIO */
++#define CONFIG_LANTIQ_GPIO
++#define CONFIG_LTQ_GPIO_MAX_BANKS	3
++#define CONFIG_LTQ_HAS_GPIO_BANK3
++
++/* FLASH driver */
++#define CONFIG_SYS_NO_FLASH
++
++#if defined(CONFIG_LTQ_SUPPORT_SPI_FLASH)
++#define CONFIG_LANTIQ_SPI
++#define CONFIG_SPI_FLASH
++
++#define CONFIG_CMD_SF
++#define CONFIG_CMD_SPI
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_HSNAND_FLASH)
++#define CONFIG_NAND_LANTIQ_HSNAND
++#define CONFIG_SYS_NAND_ONFI_DETECTION
++#define CONFIG_SYS_NAND_SELF_INIT
++#define CONFIG_SYS_MAX_NAND_DEVICE	1
++#define CONFIG_SYS_NAND_BASE0		0xB0000000
++#define CONFIG_SYS_NAND_BASE1		0xB4000000
++
++#if defined(CONFIG_LTQ_NAND_CS0)
++#define CONFIG_SYS_NAND_BASE		(CONFIG_SYS_NAND_BASE0)
++#elif defined(CONFIG_LTQ_NAND_CS1)
++#define CONFIG_SYS_NAND_BASE		(CONFIG_SYS_NAND_BASE1)
++#else
++#error "invalid NAND configuration"
++#endif
++
++#define CONFIG_CMD_NAND
++#endif
++
++#if defined(CONFIG_LTQ_SUPPORT_ETHERNET)
++#define CONFIG_LANTIQ_DMA
++#define CONFIG_LANTIQ_XRX300_SWITCH
++#define CONFIG_PHY_LANTIQ
++
++#define CONFIG_SYS_RX_ETH_BUFFER	8
++#define CONFIG_PHYLIB
++#define CONFIG_MII
++#define CONFIG_UDP_CHECKSUM
++
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++
++#define CONFIG_FW_LOADER
++#endif
++
++#define CONFIG_SPL_MAX_SIZE		(32 * 1024)
++#define CONFIG_SPL_BSS_SIZE		(4 * 1024)
++#define CONFIG_SPL_STACK_SIZE		(4 * 1024)
++#define CONFIG_SPL_STACK_BASE		(CONFIG_SYS_SRAM_BASE + \
++					CONFIG_SPL_MAX_SIZE + \
++					CONFIG_SPL_STACK_SIZE - 1)
++#define CONFIG_SPL_BSS_BASE		(CONFIG_SPL_STACK_BASE + 1)
++
++#define CONFIG_SPL_MC_TUNE_BASE		(CONFIG_SYS_SDRAM_BASE_UC + \
++					CONFIG_SYS_INIT_SP_OFFSET)
++
++#if defined(CONFIG_SYS_BOOT_RAM)
++#define CONFIG_SYS_TEXT_BASE		0xA0100000
++#define CONFIG_SKIP_LOWLEVEL_INIT
++#define CONFIG_SYS_DISABLE_CACHE
++#endif
++
++#if defined(CONFIG_SYS_BOOT_SFSPL) || defined(CONFIG_SYS_BOOT_NANDHWSPL)
++#define CONFIG_SYS_TEXT_BASE		0x80100000
++#define CONFIG_SPL_TEXT_BASE		0xBE1A0000
++#endif
++
++#if defined(CONFIG_SYS_BOOT_NANDSPL)
++#define CONFIG_SYS_TEXT_BASE		0x80100000
++#if defined(CONFIG_TPL_BUILD)
++#define CONFIG_SPL_TEXT_BASE		0xBE1A0800
++#else
++#define CONFIG_SPL_TEXT_BASE		0xBE1A0000
++#endif
++#define CONFIG_TPL_TEXT_BASE		0xBE1A0800
++#endif
++
++#define	CONFIG_SYS_MONITOR_BASE		CONFIG_SYS_TEXT_BASE
++
++#endif /* __XRX330_CONFIG_H__ */
+diff --git a/arch/mips/include/asm/arch-xrx330/gphy.h b/arch/mips/include/asm/arch-xrx330/gphy.h
+new file mode 100644
+index 0000000000..08cdd41992
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/gphy.h
+@@ -0,0 +1,56 @@
++/*
++ * Copyright (C) 2015-2016 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __XRX330_GPHY_H__
++#define __XRX330_GPHY_H__
++
++enum ltq_gphy_clk {
++	/* XTAL 36 MHz input */
++	LTQ_GPHY_CLK_36MHZ_XTAL = 1,
++	/* 25 MHz from PLL0 with divider */
++	LTQ_GPHY_CLK_25MHZ_PLL0 = 2,
++	/* derived from PLL2 output (XTAL is 36 MHz) */
++	LTQ_GPHY_CLK_24MHZ_PLL2 = 3,
++	/* 25 MHz Clock from Pin GPIO3 */
++	LTQ_GPHY_CLK_25MHZ_GPIO3 = 4,
++};
++
++#define LTQ_GPHY_FW_ALIGN	16 * 1024
++#define LTQ_GPHY_FW_SIZE	64 * 1024
++
++extern void *ltq_gphy_alloc(void);
++
++/*
++ * Load PHY11G firmware for xRX300 to given RAM address
++ *
++ * Address must be 16k aligned!
++ */
++extern void ltq_gphy_phy11g_a21_load(void *addr);
++
++/*
++ * Load PHY22F firmware for xRX300 to given RAM address
++ *
++ * Address must be 16k aligned!
++ */
++extern void ltq_gphy_phy22f_a21_load(void *addr);
++
++/*
++ * Set clock source of internal GPHYs
++ *
++ * According registers resides in CGU address space. Thus this function
++ * is implemented by the CGU driver.
++ */
++extern void ltq_cgu_gphy_clk_src(enum ltq_gphy_clk clk);
++
++/*
++ * Boot internal GPHY with id from given RAM address
++ *
++ * According registers resides in RCU address space. Thus this function
++ * is implemented by the RCU driver.
++ */
++extern void ltq_rcu_gphy_boot(unsigned int id, void *addr);
++
++#endif /* __XRX330_GPHY_H__ */
+diff --git a/arch/mips/include/asm/arch-xrx330/gpio.h b/arch/mips/include/asm/arch-xrx330/gpio.h
+new file mode 100644
+index 0000000000..049bb4fc8b
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/gpio.h
+@@ -0,0 +1,12 @@
++/*
++ * Copyright (C) 2015-2016 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __XRX330_GPIO_H__
++#define __XRX330_GPIO_H__
++
++#include <asm/lantiq/gpio.h>
++
++#endif /* __XRX330_GPIO_H__ */
+diff --git a/arch/mips/include/asm/arch-xrx330/nand.h b/arch/mips/include/asm/arch-xrx330/nand.h
+new file mode 100644
+index 0000000000..7d267b8bf7
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/nand.h
+@@ -0,0 +1,22 @@
++/*
++ * Copyright (C) 2015-2016 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __XRX330_NAND_H__
++#define __XRX330_NAND_H__
++
++enum ltq_hsnand_info {
++	HSNAND_BIG_ENDIAN	= (1 << 0),
++	HSNAND_ECC_NO_OOB	= (1 << 1),
++	HSNAND_ECC_OFF		= (1 << 2),
++	HSNAND_ECC_4BYTE	= (1 << 3),
++	HSNAND_SAMSUNG_1K	= (1 << 4),
++	HSNAND_SAMSUNG_2K	= (1 << 5),
++	HSNAND_ONFI		= (1 << 6),
++};
++
++unsigned int ltq_boot_hsnand_info(void);
++
++#endif /* __XRX330_NAND_H__ */
+diff --git a/arch/mips/include/asm/arch-xrx330/soc.h b/arch/mips/include/asm/arch-xrx330/soc.h
+new file mode 100644
+index 0000000000..4a88ba6a91
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/soc.h
+@@ -0,0 +1,49 @@
++/*
++ * Copyright (C) 2014 Lantiq Deutschland GmbH
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __XRX330_SOC_H__
++#define __XRX330_SOC_H__
++
++#define LTQ_SPI_BASE			0x1E100800
++#define LTQ_GPIO_BASE			0x1E100B00
++#define LTQ_SSIO_BASE			0x1E100BB0
++#define LTQ_ASC1_BASE			0x1E100C00
++#define LTQ_DMA_BASE			0x1E104100
++
++#define LTQ_EBU_BASE			0x16000000
++#define LTQ_EBU_REGION0_BASE		0x10000000
++#define LTQ_EBU_REGION1_BASE		0x14000000
++#define LTQ_EBU_NAND_BASE		(LTQ_EBU_BASE + 0xB0)
++#define LTQ_EBU_HSNAND_BASE		(LTQ_EBU_BASE + 0x100)
++
++#define LTQ_SWITCH_BASE			0x1E108000
++#define LTQ_SWITCH_CORE_BASE		LTQ_SWITCH_BASE
++#define LTQ_SWITCH_TOP_PDI_BASE		LTQ_SWITCH_CORE_BASE
++#define LTQ_SWITCH_BM_PDI_BASE		(LTQ_SWITCH_CORE_BASE + 4 * 0x40)
++#define LTQ_SWITCH_MAC_PDI_0_BASE	(LTQ_SWITCH_CORE_BASE + 4 * 0x900)
++#define LTQ_SWITCH_MAC_PDI_X_BASE(x)	(LTQ_SWITCH_MAC_PDI_0_BASE + x * 0x30)
++#define LTQ_SWITCH_TOPLEVEL_BASE	(LTQ_SWITCH_BASE + 4 * 0xC40)
++#define LTQ_SWITCH_MDIO_PDI_BASE	(LTQ_SWITCH_TOPLEVEL_BASE)
++#define LTQ_SWITCH_MII_PDI_BASE		(LTQ_SWITCH_TOPLEVEL_BASE + 4 * 0x36)
++#define LTQ_SWITCH_PMAC_PDI_BASE	(LTQ_SWITCH_TOPLEVEL_BASE + 4 * 0x82)
++
++#define LTQ_BOOTROM_BASE		0x1F000000
++#define LTQ_PMU_BASE			0x1F102000
++#define LTQ_CGU_BASE			0x1F103000
++#define LTQ_DCDC_BASE			0x1F106A00
++#define LTQ_MPS_BASE			0x1F107000
++#define LTQ_CHIPID_BASE			(LTQ_MPS_BASE + 0x340)
++#define LTQ_PPE_SW_WLAN_RFUSE_BASE	(LTQ_MPS_BASE + 0x3b0)
++#define LTQ_RCU_BASE			0x1F203000
++#define LTQ_RCU2_BASE			0xBF203200
++
++#define LTQ_MC_GLOBAL_BASE		0x1F800000
++#define LTQ_MC_DDR_BASE			0x1F801000
++#define LTQ_MC_DDR_CCR_OFFSET(x)	(x * 0x10)
++#define LTQ_MC_DDR_PHYR_OFFSET(x)	(x * 0x10 + 0x400)
++
++#endif /* __XRX330_SOC_H__ */
+diff --git a/arch/mips/include/asm/arch-xrx330/switch.h b/arch/mips/include/asm/arch-xrx330/switch.h
+new file mode 100644
+index 0000000000..01faba91ed
+--- /dev/null
++++ b/arch/mips/include/asm/arch-xrx330/switch.h
+@@ -0,0 +1,513 @@
++/*
++ * Copyright (C) 2015-2016 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __XRX300_SWITCH_H__
++#define __XRX300_SWITCH_H__
++
++/* Switch core registers */
++struct ar10_switch_core_regs {
++	u32 swres;		/* switch reset control */
++	u32 rsvd0[0x2];
++	u32 ssb_mode;		/* Shared segment buffer mode */
++	u32 ssb_addr;		/* Shared segment buffer address */
++	u32 ssb_data;		/* Shared segment buffer data */
++	/* TODO: implement registers */
++	u32 rsvd1[0x39];
++};
++
++/* Switch buffer management registers */
++struct ar10_switch_bm_regs {
++	struct bm_core {
++		u32 ram_val4;	/* RAM value 3 */
++		u32 ram_val3;	/* RAM value 3 */
++		u32 ram_val2;	/* RAM value 2 */
++		u32 ram_val1;	/* RAM value 1 */
++		u32 ram_val0;	/* RAM value 0 */
++		u32 ram_addr;	/* RAM address */
++		u32 ram_ctrl;	/* RAM access control */
++		u32 fsqm_gctrl;	/* Free segment queue global control */
++		u32 cons_sel;	/* Number of consumed segments */
++		u32 cons_pkt;	/* Number of consumed packet pointers */
++		u32 gctrl;	/* Global control */
++		u32 queue_gctrl;/* Queue manager global control */
++		/* TODO: implement registers */
++		u32 rsvd0[0x35];
++	} core;
++
++	struct bm_port {
++		u32 pcfg;	/* Port config */
++		u32 rmon_ctrl;	/* RMON control */
++	} port[13];
++
++	u32 rsvd0[0x66];
++
++	struct bm_queue {
++		u32 rsvd0;
++		u32 pqm_rs;	/* Packet queue manager rate shape assignment */
++	} queue[32];
++
++	struct bm_shaper {
++		u32 ctrl;	/* Rate shaper control */
++		u32 cbs;	/* Rate shaper committed burst size */
++		u32 ibs;	/* Rate shaper instantaneous burst size */
++		u32 cir_ext;	/* Rate shaper rate exponent */
++		u32 cir_mant;	/* Rate shaper rate mantissa */
++	} shaper[16];
++
++	u32 rsvd1[0x2a8];
++};
++
++/* Switch parser and classification engine registers */
++struct ar10_switch_pce_regs {
++	struct pce_core {
++		u32 tbl_key[16];/* Table key data */
++		u32 tbl_mask;	/* Table mask */
++		u32 tbl_val[5];	/* Table value */
++		u32 tbl_addr;	/* Table entry address */
++		u32 tbl_ctrl;	/* Table access control */
++		u32 tbl_stat;	/* Table general status */
++		u32 age_0;	/* Aging counter config 0 */
++		u32 age_1;	/* Aging counter config 1 */
++		u32 pmap_1;	/* Port map (monitoring) */
++		u32 pmap_2;	/* Port map (multicast) */
++		u32 pmap_3;	/* Port map (unknown unicast) */
++		u32 gctrl_0;	/* Global control 0 */
++		u32 gctrl_1;	/* Global control 1 */
++		u32 tcm_gctrl;	/* Three-color marker global control */
++		u32 igmp_ctrl;	/* IGMP control */
++		u32 igmp_drpm;	/* IGMP default router port map */
++		u32 igmp_age_0;	/* IGMP aging 0 */
++		u32 igmp_age_1;	/* IGMP aging 1 */
++		u32 igmp_stat;	/* IGMP status */
++		u32 wol_gctrl;	/* Wake-on-LAN control */
++		u32 wol_da_0;	/* Wake-on-LAN destination address 0 */
++		u32 wol_da_1;	/* Wake-on-LAN destination address 1 */
++		u32 wol_da_2;	/* Wake-on-LAN destination address 2 */
++		u32 wol_pw_0;	/* Wake-on-LAN password 0 */
++		u32 wol_pw_1;	/* Wake-on-LAN password 1 */
++		u32 wol_pw_2;	/* Wake-on-LAN password 2 */
++		u32 ier_0;	/* PCE global interrupt enable 0 */
++		u32 ier_1;	/* PCE global interrupt enable 1 */
++		u32 isr_0;	/* PCE global interrupt status 0 */
++		u32 isr_1;	/* PCE global interrupt status 1 */
++		u32 parser_stat;/* Parser status */
++		u32 rsvd0[0x6];
++	} core;
++
++	u32 rsvd0[0x10];
++
++	struct pce_port {
++		u32 pctrl_0;	/* Port control 0 */
++		u32 pctrl_1;	/* Port control 1 */
++		u32 pctrl_2;	/* Port control 2 */
++		u32 pctrl_3;	/* Port control 3 */
++		u32 wol_ctrl;	/* Wake-on-LAN control */
++		u32 vlan_ctrl;	/* VLAN control */
++		u32 def_pvid;	/* Default port VID */
++		u32 pstat;	/* Port status */
++		u32 pier;	/* Interrupt enable */
++		u32 pisr;	/* Interrupt status */
++	} port[13];
++
++	u32 rsvd1[0x7e];
++
++	struct pce_meter {
++		/* TODO: implement registers */
++		u32 rsvd0[0x7];
++	} meter[8];
++
++	u32 rsvd2[0x308];
++};
++
++static inline unsigned int to_pce_tbl_key_id(unsigned int id)
++{
++	BUG_ON(id > 15);
++
++	return 15 - id;
++}
++
++static inline unsigned int to_pce_tbl_value_id(unsigned int id)
++{
++	BUG_ON(id > 4);
++
++	return 4 - id;
++}
++
++/* Switch ethernet MAC registers */
++struct ar10_switch_mac_regs {
++	struct mac_core {
++		u32 test;		/* MAC test */
++		u32 pfad_cfg;		/* Pause frame source address config */
++		u32 pfsa_0;		/* Pause frame source address 0 */
++		u32 pfsa_1;		/* Pause frame source address 1 */
++		u32 pfsa_2;		/* Pause frame source address 2 */
++		u32 flen;		/* Frame length */
++		u32 vlan_etype_0;	/* VLAN ethertype 0 */
++		u32 vlan_etype_1;	/* VLAN ethertype 1 */
++		u32 ier;		/* Interrupt enable */
++		u32 isr;		/* Interrupt status */
++		u32 rsvd0[0x36];
++	} core;
++
++	struct mac_port {
++		u32 pstat;		/* Port status */
++		u32 pisr;		/* Interrupt status */
++		u32 pier;		/* Interrupt enable */
++		u32 ctrl_0;		/* Control 0 */
++		u32 ctrl_1;		/* Control 1 */
++		u32 ctrl_2;		/* Control 2 */
++		u32 ctrl_3;		/* Control 3 */
++		u32 ctrl_4;		/* Control 4 */
++		u32 ctrl_5;		/* Control 5 */
++		u32 lpitimer0;		/* LPI timer 0 */
++		u32 lpitimer1;		/* LPI timer 1 */
++		u32 testen;		/* Test enable */
++	} port[13];
++
++	u32 rsvd0[0xa4];
++};
++
++/* Switch Fetch DMA registers */
++struct ar10_switch_fdma_regs {
++	struct fdma_core {
++		u32 ctrl;		/* FDMA control */
++		u32 stetype;		/* Special tag ethertype control */
++		u32 vtetype;		/* VLAN tag ethertype control */
++		u32 stat;		/* FDMA status */
++		u32 ier;		/* FDMA interrupt enable */
++		u32 isr;		/* FDMA interrupt status */
++	} core;
++
++	u32 rsvd0[0x3a];
++
++	struct fdma_port {
++		u32 pctrl;		/* Port control */
++		u32 prio;		/* Port priority */
++		u32 pstat_0;		/* Port status 0 */
++		u32 pstat_1;		/* Port status 1 */
++		u32 tstamp_0;		/* Egress time stamp 0 */
++		u32 tstamp_1;		/* Egress time stamp 1 */
++	} port[13];
++
++	u32 rsvd1[0x72];
++};
++
++/* Switch Store DMA registers */
++struct ar10_switch_sdma_regs {
++	struct sdma_core {
++		u32 ctrl;		/* SDMA Control */
++		u32 fcthr_1;		/* Flow control threshold 1 */
++		u32 rsvd0;
++		u32 fcthr_3;		/* Flow control threshold 3 */
++		u32 fcthr_4;		/* Flow control threshold 4 */
++		u32 fcthr_5;		/* Flow control threshold 5 */
++		u32 fcthr_6;		/* Flow control threshold 6 */
++		u32 fcthr_7;		/* Flow control threshold 7 */
++		u32 stat_0;		/* SDMA status 0 */
++		u32 stat_1;		/* SDMA status 1 */
++		u32 stat_2;		/* SDMA status 2 */
++		u32 ier;		/* SDMA interrupt enable */
++		u32 isr;		/* SDMA interrupt status */
++	} core;
++
++	u32 rsvd0[0x73];
++
++	struct sdma_port {
++		u32 pctrl;		/* Port control */
++		u32 prio;		/* Port priority */
++		u32 pstat_0;		/* Port status 0 */
++		u32 pstat_1;		/* Port status 1 */
++		u32 tstamp_0;		/* Ingress time stamp 0 */
++		u32 tstamp_1;		/* Ingress time stamp 1 */
++	} port[13];
++
++	u32 rsvd1[0x32];
++};
++
++/* Switch MDIO control and status registers */
++struct ar10_switch_mdio_regs {
++	u32 glob_ctrl;		/* Global control 0 */
++	u32 rsvd0[7];
++	u32 mdio_ctrl;		/* MDIO control */
++	u32 mdio_read;		/* MDIO read data */
++	u32 mdio_write;		/* MDIO write data */
++	u32 mdc_cfg_0;		/* MDC clock configuration 0 */
++	u32 mdc_cfg_1;		/* MDC clock configuration 1 */
++	u32 rsvd1[0x3];
++	u32 phy_addr[6];	/* PHY address port 5..0 */
++	u32 mdio_stat[6];	/* MDIO PHY polling status port 0..5 */
++	u32 aneg_eee[6];	/* EEE auto-neg overrides port 0..5 */
++	u32 rsvd2[0x14];
++};
++
++static inline unsigned int to_mdio_phyaddr_id(unsigned int id)
++{
++	BUG_ON(id > 5);
++
++	return 5 - id;
++}
++
++/* Switch xMII control registers */
++struct ar10_switch_mii_regs {
++	u32 mii_cfg0;		/* xMII port 0 configuration */
++	u32 pcdu0;		/* Port 0 clock delay configuration */
++	u32 rsvd0[0x4];
++	u32 mii_cfg3;		/* xMII port 3 configuration */
++	u32 rsvd1[0x3];
++	u32 mii_cfg5;		/* xMII port 5 configuration */
++	u32 pcdu5;		/* Port 5 clock delay configuration */
++	u32 rsvd2[0x14];
++	u32 rxb_ctl_0;		/* Port 0 receive buffer control */
++	u32 rsvd3[0x4];
++	u32 rxb_ctl_5;		/* Port 5 receive buffer control */
++	u32 rsvd4[0x26];
++};
++
++/* Switch Pseudo-MAC registers */
++struct ar10_switch_pmac_regs {
++	u32 hd_ctl;		/* PMAC header control */
++	u32 tl;			/* PMAC type/length */
++	u32 sa1;		/* PMAC source address 1 */
++	u32 sa2;		/* PMAC source address 2 */
++	u32 sa3;		/* PMAC source address 3 */
++	u32 da1;		/* PMAC destination address 1 */
++	u32 da2;		/* PMAC destination address 2 */
++	u32 da3;		/* PMAC destination address 3 */
++	u32 vlan;		/* PMAC VLAN */
++	u32 rx_ipg;		/* PMAC interpacket gap in RX direction */
++	u32 st_etype;		/* PMAC special tag ethertype */
++	u32 ewan;		/* PMAC ethernet WAN group */
++	u32 ctl;		/* PMAC control */
++	u32 rsvd0[0x2];
++};
++
++struct ar10_switch_regs {
++	struct ar10_switch_core_regs core;
++	struct ar10_switch_bm_regs bm;
++	struct ar10_switch_pce_regs pce;
++	struct ar10_switch_mac_regs mac;
++	struct ar10_switch_fdma_regs fdma;
++	struct ar10_switch_sdma_regs sdma;
++	struct ar10_switch_mdio_regs mdio;
++	struct ar10_switch_mii_regs mii;
++	struct ar10_switch_pmac_regs pmac;
++};
++
++static inline void *to_pce_tbl_key(struct ar10_switch_regs *regs,
++						unsigned int id)
++{
++	return &regs->pce.core.tbl_key[to_pce_tbl_key_id(id)];
++}
++
++static inline void *to_pce_tbl_value(struct ar10_switch_regs *regs,
++						unsigned int id)
++{
++	return &regs->pce.core.tbl_val[to_pce_tbl_value_id(id)];
++}
++
++static inline void *to_mac_ctrl(struct ar10_switch_regs *regs,
++					unsigned int id, unsigned int ctrl)
++{
++	struct mac_port *mac = &regs->mac.port[id];
++
++	switch (ctrl) {
++	case 0:
++		return &mac->ctrl_0;
++	case 1:
++		return &mac->ctrl_1;
++	case 2:
++		return &mac->ctrl_2;
++	case 3:
++		return &mac->ctrl_3;
++	case 4:
++		return &mac->ctrl_4;
++	case 5:
++		return &mac->ctrl_5;
++	default:
++		return NULL;
++	}
++}
++
++static inline void *to_mdio_phyaddr(struct ar10_switch_regs *regs,
++					unsigned int id)
++{
++	return &regs->mdio.phy_addr[to_mdio_phyaddr_id(id)];
++}
++
++static inline void *to_mii_miicfg(struct ar10_switch_regs *regs,
++					unsigned int id)
++{
++	switch (id) {
++	case 0:
++		return &regs->mii.mii_cfg0;
++	case 3:
++		return &regs->mii.mii_cfg3;
++	case 5:
++		return &regs->mii.mii_cfg5;
++	default:
++		return NULL;
++	}
++}
++
++static inline void *to_mii_pcdu(struct ar10_switch_regs *regs,
++					unsigned int id)
++{
++	switch (id) {
++	case 0:
++		return &regs->mii.pcdu0;
++	case 5:
++		return &regs->mii.pcdu5;
++	default:
++		return NULL;
++	}
++}
++
++#define AR10_SWITCH_REG_OFFSET(reg)	(4 * (reg))
++
++#define BUILD_CHECK_AR10_REG(name, offset)	\
++	BUILD_BUG_ON(offsetof(struct ar10_switch_regs, name) != (4 * offset))
++
++static inline void build_check_ar10_registers(void)
++{
++	BUILD_CHECK_AR10_REG(core, 0x0);
++	BUILD_CHECK_AR10_REG(core.ssb_mode, 0x3);
++	BUILD_CHECK_AR10_REG(bm.core, 0x3f);
++	BUILD_CHECK_AR10_REG(bm.core.queue_gctrl, 0x4a);
++	BUILD_CHECK_AR10_REG(bm.port[0], 0x80);
++	BUILD_CHECK_AR10_REG(bm.queue, 0x100);
++	BUILD_CHECK_AR10_REG(bm.shaper, 0x140);
++	BUILD_CHECK_AR10_REG(pce.core, 0x438);
++	BUILD_CHECK_AR10_REG(pce.core.tbl_ctrl, 0x44f);
++	BUILD_CHECK_AR10_REG(pce.core.parser_stat, 0x469);
++	BUILD_CHECK_AR10_REG(pce.port[0], 0x480);
++	BUILD_CHECK_AR10_REG(pce.meter[0], 0x580);
++	BUILD_CHECK_AR10_REG(mac.core, 0x8c0);
++	BUILD_CHECK_AR10_REG(mac.port[0].pstat, 0x900);
++	BUILD_CHECK_AR10_REG(mac.port[0].ctrl_0, 0x903);
++	BUILD_CHECK_AR10_REG(mac.port[1].pstat, 0x90c);
++	BUILD_CHECK_AR10_REG(mac.port[1].ctrl_0, 0x90f);
++	BUILD_CHECK_AR10_REG(mac.port[2].pstat, 0x918);
++	BUILD_CHECK_AR10_REG(mac.port[2].ctrl_0, 0x91b);
++	BUILD_CHECK_AR10_REG(fdma.core, 0xa40);
++	BUILD_CHECK_AR10_REG(fdma.port[0], 0xa80);
++	BUILD_CHECK_AR10_REG(sdma.core, 0xb40);
++	BUILD_CHECK_AR10_REG(sdma.port[0], 0xbc0);
++	BUILD_CHECK_AR10_REG(mdio, 0xc40);
++	BUILD_CHECK_AR10_REG(mii.mii_cfg0, (0xc40 + 0x36));
++	BUILD_CHECK_AR10_REG(mii.mii_cfg3, (0xc40 + 0x3c));
++	BUILD_CHECK_AR10_REG(mii.mii_cfg5, (0xc40 + 0x40));
++	BUILD_CHECK_AR10_REG(mii.rxb_ctl_0, (0xc40 + 0x56));
++	BUILD_CHECK_AR10_REG(mii.rxb_ctl_5, (0xc40 + 0x5b));
++	BUILD_CHECK_AR10_REG(pmac, (0xc40 + 0x82));
++}
++
++#define BM_GCTRL_F_SRES		1
++
++#define MAC_CTRL0_BM		(1 << 12)
++#define MAC_CTRL0_APADEN	(1 << 11)
++#define MAC_CTRL0_VPAD2EN	(1 << 10)
++#define MAC_CTRL0_VPADEN	(1 << 9)
++#define MAC_CTRL0_PADEN		(1 << 8)
++#define MAC_CTRL0_FCS		(1 << 7)
++#define MAC_CTRL0_FCON_SHIFT	4
++#define MAC_CTRL0_FCON_AUTO	(0x0 << MAC_CTRL0_FCON_SHIFT)
++#define MAC_CTRL0_FCON_RX	(0x1 << MAC_CTRL0_FCON_SHIFT)
++#define MAC_CTRL0_FCON_TX	(0x2 << MAC_CTRL0_FCON_SHIFT)
++#define MAC_CTRL0_FCON_RXTX	(0x3 << MAC_CTRL0_FCON_SHIFT)
++#define MAC_CTRL0_FCON_NONE	(0x4 << MAC_CTRL0_FCON_SHIFT)
++#define MAC_CTRL0_FDUP_SHIFT	2
++#define MAC_CTRL0_FDUP_AUTO	(0x0 << MAC_CTRL0_FDUP_SHIFT)
++#define MAC_CTRL0_FDUP_EN	(0x1 << MAC_CTRL0_FDUP_SHIFT)
++#define MAC_CTRL0_FDUP_DIS	(0x3 << MAC_CTRL0_FDUP_SHIFT)
++#define MAC_CTRL0_GMII_AUTO	0x0
++#define MAC_CTRL0_GMII_MII	0x1
++#define MAC_CTRL0_GMII_GMII	0x2
++#define MAC_CTRL0_GMII_GMII_2G	0x3
++
++#define MAC_CTRL1_DEFERMODE	(1 << 15)
++#define MAC_CTRL1_SHORTPRE	(1 << 8)
++
++#define MAC_CTRL2_MLEN		(1 << 3)
++#define MAC_CTRL2_LCHKL		(1 << 2)
++#define MAC_CTRL2_LCHKS_DIS	0x0
++#define MAC_CTRL2_LCHKS_UNTAG	0x1
++#define MAC_CTRL2_LCHKS_TAG	0x2
++
++#define PHY_ADDR_LNKST_SHIFT	13
++#define PHY_ADDR_LNKST_AUTO	(0x0 << PHY_ADDR_LNKST_SHIFT)
++#define PHY_ADDR_LNKST_UP	(0x1 << PHY_ADDR_LNKST_SHIFT)
++#define PHY_ADDR_LNKST_DOWN	(0x2 << PHY_ADDR_LNKST_SHIFT)
++#define PHY_ADDR_SPEED_SHIFT	11
++#define PHY_ADDR_SPEED_M10	(0x0 << PHY_ADDR_SPEED_SHIFT)
++#define PHY_ADDR_SPEED_M100	(0x1 << PHY_ADDR_SPEED_SHIFT)
++#define PHY_ADDR_SPEED_G1	(0x2 << PHY_ADDR_SPEED_SHIFT)
++#define PHY_ADDR_SPEED_AUTO	(0x3 << PHY_ADDR_SPEED_SHIFT)
++#define PHY_ADDR_FDUP_SHIFT	9
++#define PHY_ADDR_FDUP_AUTO	(0x0 << PHY_ADDR_FDUP_SHIFT)
++#define PHY_ADDR_FDUP_EN	(0x1 << PHY_ADDR_FDUP_SHIFT)
++#define PHY_ADDR_FDUP_DIS	(0x3 << PHY_ADDR_FDUP_SHIFT)
++#define PHY_ADDR_FCONTX_SHIFT	7
++#define PHY_ADDR_FCONTX_AUTO	(0x0 << PHY_ADDR_FCONTX_SHIFT)
++#define PHY_ADDR_FCONTX_EN	(0x1 << PHY_ADDR_FCONTX_SHIFT)
++#define PHY_ADDR_FCONTX_DIS	(0x3 << PHY_ADDR_FCONTX_SHIFT)
++#define PHY_ADDR_FCONRX_SHIFT	5
++#define PHY_ADDR_FCONRX_AUTO	(0x0 << PHY_ADDR_FCONRX_SHIFT)
++#define PHY_ADDR_FCONRX_EN	(0x1 << PHY_ADDR_FCONRX_SHIFT)
++#define PHY_ADDR_FCONRX_DIS	(0x3 << PHY_ADDR_FCONRX_SHIFT)
++
++#define MII_CFG_RES		(1 << 15)
++#define MII_CFG_EN		(1 << 14)
++#define MII_CFG_LDCLKDIS	(1 << 12)
++#define MII_CFG_MIIRATE_SHIFT	4
++#define MII_CFG_MIIRATE_MASK	(0x7 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIRATE_M2P5	(0x0 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIRATE_M25	(0x1 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIRATE_M125	(0x2 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIRATE_M50	(0x3 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIRATE_AUTO	(0x4 << MII_CFG_MIIRATE_SHIFT)
++#define MII_CFG_MIIMODE_MASK	0xf
++#define MII_CFG_MIIMODE_MIIP	0x0
++#define MII_CFG_MIIMODE_MIIM	0x1
++#define MII_CFG_MIIMODE_RMIIP	0x2
++#define MII_CFG_MIIMODE_RMIIM	0x3
++#define MII_CFG_MIIMODE_RGMII	0x4
++
++#define PCDU_RXDLY_SHIFT	7
++#define PCDU_RXDLY_MASK		(0x7 << PCDU_RXDLY_SHIFT)
++#define PCDU_TXDLY_MASK		0x7
++
++#define PMAC_HD_CTL_FC		(1 << 10)
++#define PMAC_HD_CTL_CCRC	(1 << 9)
++#define PMAC_HD_CTL_RST		(1 << 8)
++#define PMAC_HD_CTL_AST		(1 << 7)
++#define PMAC_HD_CTL_RXSH	(1 << 6)
++#define PMAC_HD_CTL_RC		(1 << 4)
++#define PMAC_HD_CTL_AS		(1 << 3)
++#define PMAC_HD_CTL_AC		(1 << 2)
++
++#define PCE_PCTRL_0_IGSTEN	(1 << 11)
++
++#define FDMA_PCTRL_STEN		(1 << 1)
++#define FDMA_PCTRL_EN		(1 << 0)
++
++#define SDMA_PCTRL_EN		(1 << 0)
++
++#define MDIO_GLOB_CTRL_SE	(1 << 15)
++
++#define MDIO_MDC_CFG1_RES	(1 << 15)
++#define MDIO_MDC_CFG1_MCEN	(1 << 8)
++
++#define MDIO_CTRL_MBUSY		(1 << 12)
++#define MDIO_CTRL_OP_READ	(1 << 11)
++#define MDIO_CTRL_OP_WRITE	(1 << 10)
++#define MDIO_CTRL_PHYAD_SHIFT	5
++#define MDIO_CTRL_PHYAD_MASK	(0x1f << MDIO_CTRL_PHYAD_SHIFT)
++#define MDIO_CTRL_REGAD_MASK	0x1f
++
++void ltq_reset_switch_mem_repair(void);
++void switch_mem_fix(u32 mem_id, u32 rar0_1, u32 addr);
++
++#endif /* __XRX300_SWITCH_H__ */
+diff --git a/arch/mips/include/asm/lantiq/chipid.h b/arch/mips/include/asm/lantiq/chipid.h
+index 19adf97990..d491df2ae0 100644
+--- a/arch/mips/include/asm/lantiq/chipid.h
++++ b/arch/mips/include/asm/lantiq/chipid.h
+@@ -22,6 +22,9 @@ enum ltq_chip_partnum {
+ 	LTQ_SOC_VRX288 = 0x01C0,	/* VRX288 v1.1 */
+ 	LTQ_SOC_VRX268 = 0x01C2,	/* VRX268 v1.1 */
+ 	LTQ_SOC_GRX288 = 0x01C9,	/* GRX288 v1.1 */
++	LTQ_SOC_GRX387 = 0x0F,
++	LTQ_SOC_GRX369 = 0x11,
++	LTQ_SOC_GRX389 = 0x12,
+ };
+ 
+ extern unsigned int ltq_chip_version_get(void);
+@@ -106,4 +109,23 @@ static inline int ltq_soc_is_vrx200_v2(void)
+ }
+ #endif
+ 
++#ifdef CONFIG_SOC_XWAY_XRX330
++static inline int ltq_soc_is_grx330(void)
++{
++	return 1;
++}
++
++int ltq_soc_is_grx389_720(void);
++#else
++static inline int ltq_soc_is_grx330(void)
++{
++	return 0;
++}
++
++static inline int ltq_soc_is_grx389_720(void)
++{
++	return 0;
++}
++#endif
++
+ #endif /* __LANTIQ_CHIPID_H__ */
+diff --git a/arch/mips/include/asm/lantiq/clk.h b/arch/mips/include/asm/lantiq/clk.h
+index 5aea603ccf..48fa24891b 100644
+--- a/arch/mips/include/asm/lantiq/clk.h
++++ b/arch/mips/include/asm/lantiq/clk.h
+@@ -15,12 +15,18 @@ enum ltq_clk {
+ 	CLOCK_125_MHZ = 125000000,
+ 	CLOCK_131_MHZ = 131073000,
+ 	CLOCK_133_MHZ = 133333333,
++	CLOCK_150_MHZ = 150000000,
+ 	CLOCK_166_MHZ = 166666667,
++	CLOCK_180_MHZ = 180000000,
+ 	CLOCK_197_MHZ = 196609500,
++	CLOCK_300_MHZ = 300000000,
+ 	CLOCK_333_MHZ = 333333333,
++	CLOCK_360_MHZ = 360000000,
+ 	CLOCK_393_MHZ = 393219000,
+ 	CLOCK_500_MHZ = 500000000,
+ 	CLOCK_600_MHZ = 600000000,
++	CLOCK_666_MHZ = 666666666,
++	CLOCK_720_MHZ = 720000000,
+ 	CLOCK_1000_MHZ = 1000000000,
+ };
+ 
+diff --git a/arch/mips/include/asm/lantiq/cpu.h b/arch/mips/include/asm/lantiq/cpu.h
+index db7c453ba6..11bc78ba9c 100644
+--- a/arch/mips/include/asm/lantiq/cpu.h
++++ b/arch/mips/include/asm/lantiq/cpu.h
+@@ -14,6 +14,11 @@ enum ltq_boot_select {
+ 	BOOT_UART_NO_EEPROM,
+ 	BOOT_SPI,
+ 	BOOT_NAND,
++	BOOT_NAND_SAMSUNG_2K,
++	BOOT_NAND_SAMSUNG_1K,
++	BOOT_HSNAND_SAMSUNG_2K,
++	BOOT_HSNAND_SAMSUNG_1K,
++	BOOT_HSNAND_ONFI,
+ 	BOOT_PCI,
+ 	BOOT_MII0,
+ 	BOOT_RMII0,
+-- 
+2.11.0
+

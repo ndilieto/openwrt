@@ -1,0 +1,53 @@
+From fbe85c676a72fcbd3415d99668fa2bc9f0201c36 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Mon, 14 Sep 2015 17:50:26 +0200
+Subject: [PATCH 014/158] common/board_f: enable setup_board_part1() for MIPS
+
+The variables bd_t:bi_memstart and bd_t:bi_memsize have to be
+initialized also on MIPS. Otherwise LMB and cmd_bdinfo do not
+correctly work. Enable the board_init_f hook setup_board_part1()
+also for MIPS to fix this.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ common/board_f.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/common/board_f.c b/common/board_f.c
+index 589df93899..36bd1f5134 100644
+--- a/common/board_f.c
++++ b/common/board_f.c
+@@ -630,7 +630,7 @@ static int display_new_sp(void)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_PPC
++#if defined(CONFIG_PPC) || defined(CONFIG_MIPS)
+ static int setup_board_part1(void)
+ {
+ 	bd_t *bd = gd->bd;
+@@ -660,7 +660,9 @@ static int setup_board_part1(void)
+ 
+ 	return 0;
+ }
++#endif
+ 
++#ifdef CONFIG_PPC
+ static int setup_board_part2(void)
+ {
+ 	bd_t *bd = gd->bd;
+@@ -958,8 +960,10 @@ static init_fnc_t init_sequence_f[] = {
+ 	reserve_stacks,
+ 	setup_dram_config,
+ 	show_dram_config,
+-#ifdef CONFIG_PPC
++#if defined(CONFIG_PPC) || defined(CONFIG_MIPS)
+ 	setup_board_part1,
++#endif
++#ifdef CONFIG_PPC
+ 	INIT_FUNC_WATCHDOG_RESET
+ 	setup_board_part2,
+ #endif
+-- 
+2.11.0
+

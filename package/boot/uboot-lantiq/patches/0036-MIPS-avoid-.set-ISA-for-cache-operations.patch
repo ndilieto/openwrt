@@ -1,0 +1,206 @@
+From 66c0f75a1daeb5dead55a3e712fd8de3d61e7f7a Mon Sep 17 00:00:00 2001
+From: Paul Burton <paul.burton@imgtec.com>
+Date: Thu, 29 Jan 2015 01:27:56 +0000
+Subject: [PATCH 036/158] MIPS: avoid .set ISA for cache operations
+
+Commit 2b8bcc5a2fca54648ece966902b8230de971b609 upstream.
+
+As a step towards unifying the cache maintenance code for mips32 &
+mips64 CPUs, stop using ".set <ISA>" directives in the more developed
+mips32 version of the code. Instead, when present make use of the GCC
+builtin for emitting a cache instruction. When not present, simply don't
+bother with the .set directives since U-boot always builds with
+-march=mips32 or higher anyway.
+
+Signed-off-by: Paul Burton <paul.burton@imgtec.com>
+Cc: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/cache.S     | 18 +++++-------------
+ arch/mips/cpu/mips32/cpu.c       | 40 +++++++++++++++-------------------------
+ arch/mips/include/asm/cacheops.h | 13 +++++++++++++
+ 3 files changed, 33 insertions(+), 38 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/cache.S b/arch/mips/cpu/mips32/cache.S
+index 22bd844eae..fb1d84b75a 100644
+--- a/arch/mips/cpu/mips32/cache.S
++++ b/arch/mips/cpu/mips32/cache.S
+@@ -22,14 +22,6 @@
+ 
+ #define INDEX_BASE	CKSEG0
+ 
+-	.macro	cache_op op addr
+-	.set	push
+-	.set	noreorder
+-	.set	mips3
+-	cache	\op, 0(\addr)
+-	.set	pop
+-	.endm
+-
+ 	.macro	f_fill64 dst, offset, val
+ 	LONG_S	\val, (\offset +  0 * LONGSIZE)(\dst)
+ 	LONG_S	\val, (\offset +  1 * LONGSIZE)(\dst)
+@@ -60,17 +52,17 @@ LEAF(mips_init_icache)
+ 	/* clear tag to invalidate */
+ 	PTR_LI		t0, INDEX_BASE
+ 	PTR_ADDU	t1, t0, a1
+-1:	cache_op	INDEX_STORE_TAG_I t0
++1:	cache		INDEX_STORE_TAG_I, 0(t0)
+ 	PTR_ADDU	t0, a2
+ 	bne		t0, t1, 1b
+ 	/* fill once, so data field parity is correct */
+ 	PTR_LI		t0, INDEX_BASE
+-2:	cache_op	FILL t0
++2:	cache		FILL, 0(t0)
+ 	PTR_ADDU	t0, a2
+ 	bne		t0, t1, 2b
+ 	/* invalidate again - prudent but not strictly neccessary */
+ 	PTR_LI		t0, INDEX_BASE
+-1:	cache_op	INDEX_STORE_TAG_I t0
++1:	cache		INDEX_STORE_TAG_I, 0(t0)
+ 	PTR_ADDU	t0, a2
+ 	bne		t0, t1, 1b
+ 9:	jr		ra
+@@ -85,7 +77,7 @@ LEAF(mips_init_dcache)
+ 	/* clear all tags */
+ 	PTR_LI		t0, INDEX_BASE
+ 	PTR_ADDU	t1, t0, a1
+-1:	cache_op	INDEX_STORE_TAG_D t0
++1:	cache		INDEX_STORE_TAG_D, 0(t0)
+ 	PTR_ADDU	t0, a2
+ 	bne		t0, t1, 1b
+ 	/* load from each line (in cached space) */
+@@ -95,7 +87,7 @@ LEAF(mips_init_dcache)
+ 	bne		t0, t1, 2b
+ 	/* clear all tags */
+ 	PTR_LI		t0, INDEX_BASE
+-1:	cache_op	INDEX_STORE_TAG_D t0
++1:	cache		INDEX_STORE_TAG_D, 0(t0)
+ 	PTR_ADDU	t0, a2
+ 	bne		t0, t1, 1b
+ 9:	jr		ra
+diff --git a/arch/mips/cpu/mips32/cpu.c b/arch/mips/cpu/mips32/cpu.c
+index 278865b6ff..1af909a9a5 100644
+--- a/arch/mips/cpu/mips32/cpu.c
++++ b/arch/mips/cpu/mips32/cpu.c
+@@ -12,16 +12,6 @@
+ #include <asm/cacheops.h>
+ #include <asm/reboot.h>
+ 
+-#define cache_op(op,addr)						\
+-	__asm__ __volatile__(						\
+-	"	.set	push					\n"	\
+-	"	.set	noreorder				\n"	\
+-	"	.set	mips3\n\t				\n"	\
+-	"	cache	%0, %1					\n"	\
+-	"	.set	pop					\n"	\
+-	:								\
+-	: "i" (op), "R" (*(unsigned char *)(addr)))
+-
+ void __attribute__((weak)) _machine_restart(void)
+ {
+ }
+@@ -74,20 +64,20 @@ void flush_cache(ulong start_addr, ulong size)
+ {
+ 	unsigned long ilsize = icache_line_size();
+ 	unsigned long dlsize = dcache_line_size();
+-	unsigned long addr, aend;
++	const void *addr, *aend;
+ 
+ 	/* aend will be miscalculated when size is zero, so we return here */
+ 	if (size == 0)
+ 		return;
+ 
+-	addr = start_addr & ~(dlsize - 1);
+-	aend = (start_addr + size - 1) & ~(dlsize - 1);
++	addr = (const void *)(start_addr & ~(dlsize - 1));
++	aend = (const void *)((start_addr + size - 1) & ~(dlsize - 1));
+ 
+ 	if (ilsize == dlsize) {
+ 		/* flush I-cache & D-cache simultaneously */
+ 		while (1) {
+-			cache_op(HIT_WRITEBACK_INV_D, addr);
+-			cache_op(HIT_INVALIDATE_I, addr);
++			mips_cache(HIT_WRITEBACK_INV_D, addr);
++			mips_cache(HIT_INVALIDATE_I, addr);
+ 			if (addr == aend)
+ 				break;
+ 			addr += dlsize;
+@@ -97,17 +87,17 @@ void flush_cache(ulong start_addr, ulong size)
+ 
+ 	/* flush D-cache */
+ 	while (1) {
+-		cache_op(HIT_WRITEBACK_INV_D, addr);
++		mips_cache(HIT_WRITEBACK_INV_D, addr);
+ 		if (addr == aend)
+ 			break;
+ 		addr += dlsize;
+ 	}
+ 
+ 	/* flush I-cache */
+-	addr = start_addr & ~(ilsize - 1);
+-	aend = (start_addr + size - 1) & ~(ilsize - 1);
++	addr = (const void *)(start_addr & ~(ilsize - 1));
++	aend = (const void *)((start_addr + size - 1) & ~(ilsize - 1));
+ 	while (1) {
+-		cache_op(HIT_INVALIDATE_I, addr);
++		mips_cache(HIT_INVALIDATE_I, addr);
+ 		if (addr == aend)
+ 			break;
+ 		addr += ilsize;
+@@ -117,11 +107,11 @@ void flush_cache(ulong start_addr, ulong size)
+ void flush_dcache_range(ulong start_addr, ulong stop)
+ {
+ 	unsigned long lsize = dcache_line_size();
+-	unsigned long addr = start_addr & ~(lsize - 1);
+-	unsigned long aend = (stop - 1) & ~(lsize - 1);
++	const void *addr = (const void *)(start_addr & ~(lsize - 1));
++	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
+ 
+ 	while (1) {
+-		cache_op(HIT_WRITEBACK_INV_D, addr);
++		mips_cache(HIT_WRITEBACK_INV_D, addr);
+ 		if (addr == aend)
+ 			break;
+ 		addr += lsize;
+@@ -131,11 +121,11 @@ void flush_dcache_range(ulong start_addr, ulong stop)
+ void invalidate_dcache_range(ulong start_addr, ulong stop)
+ {
+ 	unsigned long lsize = dcache_line_size();
+-	unsigned long addr = start_addr & ~(lsize - 1);
+-	unsigned long aend = (stop - 1) & ~(lsize - 1);
++	const void *addr = (const void *)(start_addr & ~(lsize - 1));
++	const void *aend = (const void *)((stop - 1) & ~(lsize - 1));
+ 
+ 	while (1) {
+-		cache_op(HIT_INVALIDATE_D, addr);
++		mips_cache(HIT_INVALIDATE_D, addr);
+ 		if (addr == aend)
+ 			break;
+ 		addr += lsize;
+diff --git a/arch/mips/include/asm/cacheops.h b/arch/mips/include/asm/cacheops.h
+index 6464250d84..75ec380980 100644
+--- a/arch/mips/include/asm/cacheops.h
++++ b/arch/mips/include/asm/cacheops.h
+@@ -11,6 +11,19 @@
+ #ifndef	__ASM_CACHEOPS_H
+ #define	__ASM_CACHEOPS_H
+ 
++#ifndef __ASSEMBLY__
++
++static inline void mips_cache(int op, const volatile void *addr)
++{
++#ifdef __GCC_HAVE_BUILTIN_MIPS_CACHE
++	__builtin_mips_cache(op, addr);
++#else
++	__asm__ __volatile__("cache %0, %1" : : "i"(op), "R"(addr))
++#endif
++}
++
++#endif /* !__ASSEMBLY__ */
++
+ /*
+  * Cache Operations available on all MIPS processors with R4000-style caches
+  */
+-- 
+2.11.0
+

@@ -1,0 +1,169 @@
+From 8bd279aeb19ee0cc7df468a3c8c59a6ed0752827 Mon Sep 17 00:00:00 2001
+From: Thomas Langer <thomas.langer@lantiq.com>
+Date: Wed, 14 Jan 2015 18:44:00 +0000
+Subject: [PATCH 034/158] MIPS: use common code from lib/time.c
+
+Commit a18a477147ce2493ef9ee93b8981b34929fc48a5 upstream.
+
+The common code just needs the C0_COUNT as free running counter,
+without the need of writing and checking C0_COMPARE.
+
+The function get_tbclk() is still implemented here instead of changing
+all places of CONFIG_SYS_MIPS_TIMER_FREQ to CONFIG_SYS_TIMER_RATE.
+
+The change was tested on a MIPS32 system, but as the MIPS64 code
+was/is the same, this should be no problem.
+
+Signed-off-by: Thomas Langer <thomas.langer@lantiq.com>
+---
+ arch/mips/cpu/mips32/time.c | 59 +++------------------------------------------
+ arch/mips/cpu/mips64/time.c | 59 +++------------------------------------------
+ 2 files changed, 8 insertions(+), 110 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/time.c b/arch/mips/cpu/mips32/time.c
+index 386f45a1b0..553da5f4ba 100644
+--- a/arch/mips/cpu/mips32/time.c
++++ b/arch/mips/cpu/mips32/time.c
+@@ -8,63 +8,12 @@
+ #include <common.h>
+ #include <asm/mipsregs.h>
+ 
+-static unsigned long timestamp;
+-
+-/* how many counter cycles in a jiffy */
+-#define CYCLES_PER_JIFFY	\
+-	(CONFIG_SYS_MIPS_TIMER_FREQ + CONFIG_SYS_HZ / 2) / CONFIG_SYS_HZ
+-
+-/*
+- * timer without interrupts
+- */
+-
+-int timer_init(void)
+-{
+-	/* Set up the timer for the first expiration. */
+-	write_c0_compare(read_c0_count() + CYCLES_PER_JIFFY);
+-
+-	return 0;
+-}
+-
+-ulong get_timer(ulong base)
+-{
+-	unsigned int count;
+-	unsigned int expirelo = read_c0_compare();
+-
+-	/* Check to see if we have missed any timestamps. */
+-	count = read_c0_count();
+-	while ((count - expirelo) < 0x7fffffff) {
+-		expirelo += CYCLES_PER_JIFFY;
+-		timestamp++;
+-	}
+-	write_c0_compare(expirelo);
+-
+-	return timestamp - base;
+-}
+-
+-void __udelay(unsigned long usec)
++unsigned long notrace timer_read_counter(void)
+ {
+-	unsigned int tmo;
+-
+-	tmo = read_c0_count() + (usec * (CONFIG_SYS_MIPS_TIMER_FREQ / 1000000));
+-	while ((tmo - read_c0_count()) < 0x7fffffff)
+-		/*NOP*/;
++	return read_c0_count();
+ }
+ 
+-/*
+- * This function is derived from PowerPC code (read timebase as long long).
+- * On MIPS it just returns the timer value.
+- */
+-unsigned long long get_ticks(void)
+-{
+-	return get_timer(0);
+-}
+-
+-/*
+- * This function is derived from PowerPC code (timebase clock frequency).
+- * On MIPS it returns the number of timer ticks per second.
+- */
+-ulong get_tbclk(void)
++ulong notrace get_tbclk(void)
+ {
+-	return CONFIG_SYS_HZ;
++	return CONFIG_SYS_MIPS_TIMER_FREQ;
+ }
+diff --git a/arch/mips/cpu/mips64/time.c b/arch/mips/cpu/mips64/time.c
+index 0497acf4a1..553da5f4ba 100644
+--- a/arch/mips/cpu/mips64/time.c
++++ b/arch/mips/cpu/mips64/time.c
+@@ -8,63 +8,12 @@
+ #include <common.h>
+ #include <asm/mipsregs.h>
+ 
+-static unsigned long timestamp;
+-
+-/* how many counter cycles in a jiffy */
+-#define CYCLES_PER_JIFFY	 \
+-	(CONFIG_SYS_MIPS_TIMER_FREQ + CONFIG_SYS_HZ / 2) / CONFIG_SYS_HZ
+-
+-/*
+- * timer without interrupts
+- */
+-
+-int timer_init(void)
+-{
+-	/* Set up the timer for the first expiration. */
+-	write_c0_compare(read_c0_count() + CYCLES_PER_JIFFY);
+-
+-	return 0;
+-}
+-
+-ulong get_timer(ulong base)
+-{
+-	unsigned int count;
+-	unsigned int expirelo = read_c0_compare();
+-
+-	/* Check to see if we have missed any timestamps. */
+-	count = read_c0_count();
+-	while ((count - expirelo) < 0x7fffffff) {
+-		expirelo += CYCLES_PER_JIFFY;
+-		timestamp++;
+-	}
+-	write_c0_compare(expirelo);
+-
+-	return timestamp - base;
+-}
+-
+-void __udelay(unsigned long usec)
++unsigned long notrace timer_read_counter(void)
+ {
+-	unsigned int tmo;
+-
+-	tmo = read_c0_count() + (usec * (CONFIG_SYS_MIPS_TIMER_FREQ / 1000000));
+-	while ((tmo - read_c0_count()) < 0x7fffffff)
+-		/*NOP*/;
++	return read_c0_count();
+ }
+ 
+-/*
+- * This function is derived from PowerPC code (read timebase as long long).
+- * On MIPS it just returns the timer value.
+- */
+-unsigned long long get_ticks(void)
+-{
+-	return get_timer(0);
+-}
+-
+-/*
+- * This function is derived from PowerPC code (timebase clock frequency).
+- * On MIPS it returns the number of timer ticks per second.
+- */
+-ulong get_tbclk(void)
++ulong notrace get_tbclk(void)
+ {
+-	return CONFIG_SYS_HZ;
++	return CONFIG_SYS_MIPS_TIMER_FREQ;
+ }
+-- 
+2.11.0
+

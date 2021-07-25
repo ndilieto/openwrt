@@ -1,0 +1,25 @@
+From 6078829207c0e3b3a17a3fcd7b415a46da252c1b Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:55:53 +0100
+Subject: [PATCH 021/158] net: phy: fix redundant inclusion of errno.h
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/net/phy/phy.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/net/phy/phy.c b/drivers/net/phy/phy.c
+index aac85c4d09..0d49655424 100644
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -16,7 +16,6 @@
+ #include <command.h>
+ #include <miiphy.h>
+ #include <phy.h>
+-#include <errno.h>
+ #include <linux/err.h>
+ #include <linux/compiler.h>
+ 
+-- 
+2.11.0
+

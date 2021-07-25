@@ -1,0 +1,290 @@
+From 298f834996471906f15f38c804ed19b1bfd0d3fb Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 25 Aug 2015 16:35:33 +0200
+Subject: [PATCH 058/158] MIPS: add exception handling
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S |   7 +--
+ arch/mips/lib/Makefile       |   2 +
+ arch/mips/lib/genex.S        | 125 +++++++++++++++++++++++++++++++++++++++++++
+ arch/mips/lib/traps.c        |  96 +++++++++++++++++++++++++++++++++
+ 4 files changed, 227 insertions(+), 3 deletions(-)
+ create mode 100644 arch/mips/lib/genex.S
+ create mode 100644 arch/mips/lib/traps.c
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index d207d32506..96092e693d 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -79,7 +79,8 @@ ENTRY(_start)
+ 
+ 	.org 0x380
+ 	/* General exception */
+-1:	b	1b
++	PTR_LA	k1, handle_reserved
++	jr	k1
+ 	 nop
+ 
+ 	.org 0x400
+@@ -89,8 +90,8 @@ ENTRY(_start)
+ 
+ 	.org 0x480
+ 	/* EJTAG debug exception */
+-1:	b	1b
+-	 nop
++	PTR_LA	k1, handle_ejtag_debug
++	jr	k1
+ 
+ 	.align 4
+ reset:
+diff --git a/arch/mips/lib/Makefile b/arch/mips/lib/Makefile
+index 5d0191ea82..b8e4d83388 100644
+--- a/arch/mips/lib/Makefile
++++ b/arch/mips/lib/Makefile
+@@ -10,7 +10,9 @@ obj-y	+= board.o
+ endif
+ obj-y	+= cache.o
+ obj-y	+= cache_init.o
++obj-y	+= genex.o
+ obj-y	+= io.o
++obj-y	+= traps.o
+ 
+ obj-$(CONFIG_CMD_BOOTM) += bootm.o
+ 
+diff --git a/arch/mips/lib/genex.S b/arch/mips/lib/genex.S
+new file mode 100644
+index 0000000000..773474d317
+--- /dev/null
++++ b/arch/mips/lib/genex.S
+@@ -0,0 +1,125 @@
++/*
++ * Copyright (C) 1994 - 2000, 2001, 2003 Ralf Baechle
++ * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
++ * Copyright (C) 2002, 2007  Maciej W. Rozycki
++ * Copyright (C) 2001, 2012 MIPS Technologies, Inc.  All rights reserved.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <asm/asm.h>
++#include <asm/regdef.h>
++#include <asm/mipsregs.h>
++#include <asm/asm-offsets.h>
++
++	/*
++	 * Macros copied and adapted from Linux MIPS
++	 */
++	.macro	SAVE_AT
++	.set	push
++	.set	noat
++	LONG_S	$1, PT_R1(sp)
++	.set	pop
++	.endm
++
++	.macro	SAVE_TEMP
++	mfhi	v1
++#ifdef CONFIG_32BIT
++	LONG_S	$8, PT_R8(sp)
++	LONG_S	$9, PT_R9(sp)
++#endif
++	LONG_S	$10, PT_R10(sp)
++	LONG_S	$11, PT_R11(sp)
++	LONG_S	$12, PT_R12(sp)
++
++	LONG_S	v1, PT_HI(sp)
++	mflo	v1
++
++	LONG_S	$13, PT_R13(sp)
++	LONG_S	$14, PT_R14(sp)
++	LONG_S	$15, PT_R15(sp)
++	LONG_S	$24, PT_R24(sp)
++
++	LONG_S	v1, PT_LO(sp)
++
++	.endm
++
++	.macro	SAVE_STATIC
++	LONG_S	$16, PT_R16(sp)
++	LONG_S	$17, PT_R17(sp)
++	LONG_S	$18, PT_R18(sp)
++	LONG_S	$19, PT_R19(sp)
++	LONG_S	$20, PT_R20(sp)
++	LONG_S	$21, PT_R21(sp)
++	LONG_S	$22, PT_R22(sp)
++	LONG_S	$23, PT_R23(sp)
++	LONG_S	$30, PT_R30(sp)
++	.endm
++
++	.macro	SAVE_SOME
++	.set	push
++	.set	noat
++	.set	reorder
++
++	/*
++	 * Save sp in pt_regs without utilizing k0. k0 may not be
++	 * altered because it holds the address of gd data.
++	 */
++	move	k1, sp
++	PTR_SUBU k1, PT_SIZE
++	LONG_S	sp, PT_R29(k1)
++	move	sp, k1
++
++	LONG_S	$3, PT_R3(sp)
++	LONG_S	$0, PT_R0(sp)
++	mfc0	v1, CP0_STATUS
++	LONG_S	$2, PT_R2(sp)
++	LONG_S	v1, PT_STATUS(sp)
++	LONG_S	$4, PT_R4(sp)
++	mfc0	v1, CP0_CAUSE
++	LONG_S	$5, PT_R5(sp)
++	LONG_S	v1, PT_CAUSE(sp)
++	LONG_S	$6, PT_R6(sp)
++	MFC0	v1, CP0_EPC
++	LONG_S	$7, PT_R7(sp)
++#ifdef CONFIG_64BIT
++	LONG_S	$8, PT_R8(sp)
++	LONG_S	$9, PT_R9(sp)
++#endif
++	LONG_S	v1, PT_EPC(sp)
++	LONG_S	$25, PT_R25(sp)
++	LONG_S	$28, PT_R28(sp)
++	LONG_S	$31, PT_R31(sp)
++	.set	pop
++	.endm
++
++	.set	noreorder
++
++NESTED(except_vec3_generic, 0, sp)
++	PTR_LA	k1, handle_reserved
++	jr	k1
++	 nop
++	END(except_vec3_generic)
++
++NESTED(except_vec_ejtag_debug, 0, sp)
++	PTR_LA	k1, handle_ejtag_debug
++	jr	k1
++	 nop
++	END(except_vec_ejtag_debug)
++
++NESTED(handle_reserved, PT_SIZE, sp)
++	SAVE_SOME
++	SAVE_AT
++	SAVE_TEMP
++	SAVE_STATIC
++	PTR_LA	t9, do_reserved
++	jr	t9
++	 move	a0, sp
++	END(handle_reserved)
++
++NESTED(handle_ejtag_debug, PT_SIZE, sp)
++	.set	push
++	.set	mips32
++	deret
++	.set pop
++	END(handle_ejtag_debug)
+diff --git a/arch/mips/lib/traps.c b/arch/mips/lib/traps.c
+new file mode 100644
+index 0000000000..e7340726e0
+--- /dev/null
++++ b/arch/mips/lib/traps.c
+@@ -0,0 +1,96 @@
++/*
++ * Copyright (C) 1994 - 1999, 2000, 01, 06 Ralf Baechle
++ * Copyright (C) 1995, 1996 Paul M. Antoine
++ * Copyright (C) 1998 Ulf Carlsson
++ * Copyright (C) 1999 Silicon Graphics, Inc.
++ * Kevin D. Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
++ * Copyright (C) 2002, 2003, 2004, 2005, 2007  Maciej W. Rozycki
++ * Copyright (C) 2000, 2001, 2012 MIPS Technologies, Inc.  All rights reserved.
++ * Copyright (C) 2014, Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/mipsregs.h>
++#include <asm/addrspace.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++extern void exc_handler(void);
++extern void except_vec3_generic(void);
++extern void except_vec_ejtag_debug(void);
++
++static void show_regs(const struct pt_regs *regs)
++{
++	const int field = 2 * sizeof(unsigned long);
++	unsigned int cause = regs->cp0_cause;
++	unsigned int exccode;
++	int i;
++
++	/*
++	 * Saved main processor registers
++	 */
++	for (i = 0; i < 32; ) {
++		if ((i % 4) == 0)
++			printf("$%2d   :", i);
++		if (i == 0)
++			printf(" %0*lx", field, 0UL);
++		else if (i == 26 || i == 27)
++			printf(" %*s", field, "");
++		else
++			printf(" %0*lx", field, regs->regs[i]);
++
++		i++;
++		if ((i % 4) == 0)
++			puts("\n");
++	}
++
++	printf("Hi    : %0*lx\n", field, regs->hi);
++	printf("Lo    : %0*lx\n", field, regs->lo);
++
++	/*
++	 * Saved cp0 registers
++	 */
++	printf("epc   : %0*lx (original %0*lx)\n", field, regs->cp0_epc,
++		field, regs->cp0_epc - gd->reloc_off);
++	printf("ra    : %0*lx (original %0*lx)\n", field, regs->regs[31],
++		field, regs->regs[31] - gd->reloc_off);
++
++	printf("Status: %08x\n", (uint32_t) regs->cp0_status);
++
++	exccode = (cause & CAUSEF_EXCCODE) >> CAUSEB_EXCCODE;
++	printf("Cause : %08x (ExcCode %02x)\n", cause, exccode);
++
++	if (1 <= exccode && exccode <= 5)
++		printf("BadVA : %0*lx\n", field, regs->cp0_badvaddr);
++
++	printf("PrId  : %08x\n", read_c0_prid());
++}
++
++void do_reserved(const struct pt_regs *regs)
++{
++	puts("\nOoops:\n");
++	printf("Relocation offset: %lx\n", gd->reloc_off);
++	show_regs(regs);
++	hang();
++}
++
++static void set_handler(unsigned long offset, void *addr, unsigned long size)
++{
++	unsigned long ebase = gd->irq_sp;
++
++	memcpy((void *)(ebase + offset), addr, size);
++	flush_cache(ebase + offset, size);
++}
++
++void trap_init(ulong reloc_addr)
++{
++	unsigned long ebase = gd->irq_sp;
++
++	set_handler(0x180, &except_vec3_generic, 0x80);
++	set_handler(0x280, &except_vec_ejtag_debug, 0x80);
++
++	write_c0_ebase(ebase);
++	clear_c0_status(ST0_BEV);
++}
+-- 
+2.11.0
+

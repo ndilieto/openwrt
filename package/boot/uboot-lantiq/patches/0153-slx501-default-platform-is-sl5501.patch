@@ -1,0 +1,25 @@
+From b1183be28b6f978305c26f509e7616504445fd18 Mon Sep 17 00:00:00 2001
+From: Nicola Di Lieto <nicola.dilieto@gmail.com>
+Date: Sat, 24 Jul 2021 10:08:09 +0200
+Subject: [PATCH 153/158] slx501 default platform is sl5501
+
+---
+ board/zyxel/slx501/slx501.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/board/zyxel/slx501/slx501.c b/board/zyxel/slx501/slx501.c
+index 253642bd76..04a67e6c8e 100644
+--- a/board/zyxel/slx501/slx501.c
++++ b/board/zyxel/slx501/slx501.c
+@@ -219,7 +219,7 @@ int board_eth_init(bd_t * bis)
+ 	const enum ltq_gphy_clk clk = LTQ_GPHY_CLK_25MHZ_PLL0;
+ 	const ulong fw_ge_addr = 0x80FE0000;
+ 	const ulong fw_fe_addr = 0x80FF0000;
+-	unsigned int base_platform = 0;
++	unsigned int base_platform = 420;
+ 
+ 	ltq_gphy_phy11g_a2x_load(fw_ge_addr);
+ 	ltq_gphy_phy22f_a2x_load(fw_fe_addr);
+-- 
+2.11.0
+

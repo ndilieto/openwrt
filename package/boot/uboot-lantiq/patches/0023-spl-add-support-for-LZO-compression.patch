@@ -1,0 +1,25 @@
+From 84ee349d1e6d127887e1bc76232746222652ec44 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:56:28 +0100
+Subject: [PATCH 023/158] spl: add support for LZO compression
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ scripts/Makefile.spl | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/scripts/Makefile.spl b/scripts/Makefile.spl
+index bf677aa42a..b275fdecc4 100644
+--- a/scripts/Makefile.spl
++++ b/scripts/Makefile.spl
+@@ -120,6 +120,7 @@ libs-$(CONFIG_SPL_WATCHDOG_SUPPORT) += drivers/watchdog/
+ libs-$(CONFIG_SPL_USB_HOST_SUPPORT) += drivers/usb/host/
+ libs-$(CONFIG_OMAP_USB_PHY) += drivers/usb/phy/
+ libs-$(CONFIG_SPL_SATA_SUPPORT) += drivers/block/
++libs-$(CONFIG_SPL_LZO_SUPPORT) += lib/lzo/
+ 
+ ifneq (,$(CONFIG_MX23)$(CONFIG_MX35)$(filter $(SOC), mx25 mx27 mx5 mx6 mx31 mx35))
+ libs-y += arch/$(ARCH)/imx-common/
+-- 
+2.11.0
+

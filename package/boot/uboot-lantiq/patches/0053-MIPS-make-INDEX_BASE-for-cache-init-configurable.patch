@@ -1,0 +1,29 @@
+From c52abff4dc3f9bc28279ababa0366d8b2edaf287 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 26 Aug 2015 20:56:24 +0200
+Subject: [PATCH 053/158] MIPS: make INDEX_BASE for cache init configurable
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/cache_init.S | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/mips/lib/cache_init.S b/arch/mips/lib/cache_init.S
+index 137d7283ff..122460395b 100644
+--- a/arch/mips/lib/cache_init.S
++++ b/arch/mips/lib/cache_init.S
+@@ -18,7 +18,11 @@
+ #define CONFIG_SYS_MIPS_CACHE_MODE CONF_CM_CACHABLE_NONCOHERENT
+ #endif
+ 
++#ifdef CONFIG_SYS_MIPS_CACHE_BASE
++#define INDEX_BASE	CONFIG_SYS_MIPS_CACHE_BASE
++#else
+ #define INDEX_BASE	CKSEG0
++#endif
+ 
+ 	.macro	f_fill64 dst, offset, val
+ 	LONG_S	\val, (\offset +  0 * LONGSIZE)(\dst)
+-- 
+2.11.0
+

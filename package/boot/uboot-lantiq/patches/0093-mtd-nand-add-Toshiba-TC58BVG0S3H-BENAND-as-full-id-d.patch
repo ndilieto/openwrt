@@ -1,0 +1,42 @@
+From 51b4c19aa4c48cb816cfaa9b5b134487df2b9b13 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Fri, 5 Feb 2016 19:00:08 +0100
+Subject: [PATCH 093/158] mtd: nand: add Toshiba TC58BVG0S3H BENAND as full-id
+ device
+
+This device is neither ONFI nor JEDEC compatible.
+
+From datasheet:
+The TC58BVG0S3HTA00 is a single 3.3V 1 Gbit NAND EEPROM organized
+as (2048 x 64) bytes x 64 pages x 1024blocks. The device has a 2112-byte
+static register which allows program and read data to be transferred between the
+register and the memory cell array in 2112-bytes increments. The Erase operation
+is implemented in a single block unit (128 Kbytes x 4 Kbytes: 2112 bytes x 64 pages).
+
+The TC58BVG0S3HTA00 has ECC logic on the chip and 8bit read errors for each 528Bytes
+can be corrected internally.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/nand/nand_ids.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index fdd00741dc..d144460009 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -61,6 +61,11 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 		  SZ_8K, SZ_8K, SZ_2M, 0, 6, 640, NAND_ECC_INFO(40, SZ_1K),
+ 		  4 },
+ 
++	/* Toshiba BENAND */
++	{"TC58BVG0S3H 1G 3.3V 8-bit",
++		{ .id = {0x98, 0xf1, 0x80, 0x15, 0xf2, 0x16, 0x08, 0x00} },
++		  SZ_2K, SZ_128, SZ_128K, 0, 8, 64, NAND_ECC_INFO(8, SZ_512) },
++
+ 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
+ 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
+ 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE5, 4, SZ_8K, SP_OPTIONS),
+-- 
+2.11.0
+

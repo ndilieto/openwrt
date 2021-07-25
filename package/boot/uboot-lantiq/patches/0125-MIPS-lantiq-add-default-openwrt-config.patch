@@ -1,0 +1,60 @@
+From 717efe461e726bc0745f48e74129a7f929f27580 Mon Sep 17 00:00:00 2001
+From: Luka Perkov <luka@openwrt.org>
+Date: Sat, 17 Aug 2013 03:44:46 +0200
+Subject: [PATCH 125/158] MIPS: lantiq: add default openwrt config
+
+Signed-off-by: Luka Perkov <luka@openwrt.org>
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ include/configs/openwrt-lantiq-common.h | 39 +++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+ create mode 100644 include/configs/openwrt-lantiq-common.h
+
+diff --git a/include/configs/openwrt-lantiq-common.h b/include/configs/openwrt-lantiq-common.h
+new file mode 100644
+index 0000000000..d119bef943
+--- /dev/null
++++ b/include/configs/openwrt-lantiq-common.h
+@@ -0,0 +1,39 @@
++/*
++ * Copyright (C) 2013 Luka Perkov <luka@openwrt.org>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __OPENWRT_LANTIQ_COMMON_H
++#define __OPENWRT_LANTIQ_COMMON_H
++
++/* Commands */
++#if defined(CONFIG_LTQ_SUPPORT_ETHERNET)
++#define CONFIG_CMD_PING
++#endif
++
++/* Compression */
++#define CONFIG_LZMA
++
++/* Auto boot */
++#define CONFIG_BOOTDELAY	2
++
++/* Environment */
++#if !defined(CONFIG_SYS_BOOT_RAM)
++#define CONFIG_BOOTCOMMAND \
++	"bootm ${kernel_addr}"
++#endif
++
++/* Ethernet */
++#if defined(CONFIG_LTQ_SUPPORT_ETHERNET)
++#define CONFIG_ETHADDR		00:01:02:03:04:05
++#define CONFIG_SERVERIP		192.168.1.2
++#define CONFIG_IPADDR		192.168.1.1
++#endif
++
++/* Unnecessary */
++#undef CONFIG_BOOTM_NETBSD
++#undef CONFIG_BOOTM_PLAN9
++#undef CONFIG_BOOTM_RTEMS
++
++#endif /* __OPENWRT_LANTIQ_COMMON_H */
+-- 
+2.11.0
+

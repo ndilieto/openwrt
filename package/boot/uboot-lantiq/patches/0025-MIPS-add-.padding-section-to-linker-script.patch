@@ -1,0 +1,74 @@
+From 0f09f2b6752c26a7345675a24837f8b080c2a290 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 29 Oct 2014 17:30:36 +0100
+Subject: [PATCH 025/158] MIPS: add .padding section to linker script
+
+Commit 265072ba75d7a931ed0a751d5192220bcc5cc230 upstream.
+
+Commit 79fd7e649e287228a1445820a72f7dd33baedb96
+
+    MIPS: always keep all sections in u-boot ELF binary.
+
+    Always keep all sections in u-boot ELF binary. Move all unneeded
+    sections after _end to avoid allocating space in the final binary.
+    Also remove .deadcode section which is now obsolete.
+
+removed section .deadcode because the original symptoms were not
+visible anymore. Unfortuneatly the binutils bug still exists.
+
+The size of .rel.dyn section is often bigger than needed for all
+entries. But objcopy only allocates space as much as required for all
+reloc entries. Thus there is a gap between the last entry and
+__rel_dyn_end in u-boot.bin. If u-boot is booted from RAM (e.g. in
+SPL scenarios) that area could contain garbage data which could lead
+to CPU exceptions during relocation.
+
+Signed-off-by: Gabor Juhos <juhosg@openwrt.org>
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/config.mk      |  2 +-
+ arch/mips/cpu/u-boot.lds | 18 ++++++++++++++++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/config.mk b/arch/mips/config.mk
+index f4a234adbc..518d141444 100644
+--- a/arch/mips/config.mk
++++ b/arch/mips/config.mk
+@@ -55,4 +55,4 @@ PLATFORM_LDFLAGS		+= -G 0 -static -n -nostdlib $(ENDIANNESS)
+ PLATFORM_RELFLAGS		+= -ffunction-sections -fdata-sections
+ LDFLAGS_FINAL			+= --gc-sections -pie
+ OBJCOPYFLAGS			+= -j .text -j .rodata -j .data -j .got
+-OBJCOPYFLAGS			+= -j .u_boot_list -j .rel.dyn
++OBJCOPYFLAGS			+= -j .u_boot_list -j .rel.dyn -j .padding
+diff --git a/arch/mips/cpu/u-boot.lds b/arch/mips/cpu/u-boot.lds
+index e504ea7544..7d71c11ae4 100644
+--- a/arch/mips/cpu/u-boot.lds
++++ b/arch/mips/cpu/u-boot.lds
+@@ -61,6 +61,24 @@ SECTIONS
+ 		__rel_dyn_end = .;
+ 	}
+ 
++	.padding : {
++		/*
++		 * Workaround for a binutils feature (or bug?).
++		 *
++		 * The GNU ld from binutils puts the dynamic relocation
++		 * entries into the .rel.dyn section. Sometimes it
++		 * allocates more dynamic relocation entries than it needs
++		 * and the unused slots are set to R_MIPS_NONE entries.
++		 *
++		 * However the size of the .rel.dyn section in the ELF
++		 * section header does not cover the unused entries, so
++		 * objcopy removes those during stripping.
++		 *
++		 * Create a small section here to avoid that.
++		 */
++		LONG(0xFFFFFFFF)
++	}
++
+ 	_end = .;
+ 
+ 	.bss __rel_dyn_start (OVERLAY) : {
+-- 
+2.11.0
+

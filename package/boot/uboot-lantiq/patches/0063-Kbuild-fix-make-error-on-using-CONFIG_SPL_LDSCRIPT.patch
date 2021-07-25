@@ -1,0 +1,32 @@
+From 944f6543bb264089539d10b98548c0302c1c3d19 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Mon, 24 Aug 2015 14:05:10 +0200
+Subject: [PATCH 063/158] Kbuild: fix make error on using CONFIG_SPL_LDSCRIPT
+
+If a board defines CONFIG_SPL_LDSCRIPT, LDSCRIPT remains empty
+on the first invocation of scripts/Makefile.spl because
+include/spl-autoconf.mk was not generated yet. Remove the $(error ..)
+check to fix this.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ scripts/Makefile.spl | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/scripts/Makefile.spl b/scripts/Makefile.spl
+index b275fdecc4..093c952e8e 100644
+--- a/scripts/Makefile.spl
++++ b/scripts/Makefile.spl
+@@ -159,9 +159,6 @@ endif
+ ifeq ($(wildcard $(LDSCRIPT)),)
+ 	LDSCRIPT := $(srctree)/arch/$(ARCH)/cpu/u-boot-spl.lds
+ endif
+-ifeq ($(wildcard $(LDSCRIPT)),)
+-$(error could not find linker script)
+-endif
+ 
+ # Special flags for CPP when processing the linker script.
+ # Pass the version down so we can handle backwards compatibility
+-- 
+2.11.0
+

@@ -1,0 +1,55 @@
+From c13abb847991a14eac87c5a4098b8a008bbae7e8 Mon Sep 17 00:00:00 2001
+From: Nicola Di Lieto <nicola.dilieto@gmail.com>
+Date: Sat, 24 Jul 2021 09:42:50 +0200
+Subject: [PATCH 156/158] Fix SPL build problems
+
+---
+ arch/mips/config.mk |  3 ++-
+ config.mk           | 12 ++++++------
+ 2 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/arch/mips/config.mk b/arch/mips/config.mk
+index 054cc1e9d2..135a2a1cab 100644
+--- a/arch/mips/config.mk
++++ b/arch/mips/config.mk
+@@ -53,6 +53,7 @@ ifdef CONFIG_SPL_BUILD
+ PF_ABICALLS			:= -mno-abicalls
+ PF_PIC				:= -fno-pic
+ PF_PIE				:=
++CONFIG_USE_PRIVATE_LIBGCC	:= y
+ else
+ PF_ABICALLS			:= -mabicalls
+ PF_PIC				:= -fpic
+@@ -64,5 +65,5 @@ PLATFORM_CPPFLAGS		+= -G 0 $(PF_ABICALLS) $(PF_PIC) $(ENDIANNESS)
+ PLATFORM_CPPFLAGS		+= -msoft-float
+ PLATFORM_LDFLAGS		+= -G 0 -static -n -nostdlib $(ENDIANNESS)
+ PLATFORM_RELFLAGS		+= -ffunction-sections -fdata-sections
+-LDFLAGS_FINAL			+= --gc-sections $(PF_PIE)
++LDFLAGS_FINAL			+= --no-dynamic-linker --gc-sections $(PF_PIE)
+ OBJCOPYFLAGS			+= -j .text -j .rodata -j .data $(PF_OBJCOPY)
+diff --git a/config.mk b/config.mk
+index bd74732d48..16bfcb231a 100644
+--- a/config.mk
++++ b/config.mk
+@@ -12,12 +12,12 @@
+ # (Tegra needs different flags for SPL.
+ #  That's the reason why this file must be included from spl/Makefile too.
+ #  If we did not have Tegra SoCs, build system would be much simpler...)
+-PLATFORM_RELFLAGS :=
+-PLATFORM_CPPFLAGS :=
+-PLATFORM_LDFLAGS :=
+-LDFLAGS :=
+-LDFLAGS_FINAL :=
+-OBJCOPYFLAGS :=
++PLATFORM_RELFLAGS =
++PLATFORM_CPPFLAGS =
++PLATFORM_LDFLAGS =
++LDFLAGS =
++LDFLAGS_FINAL =
++OBJCOPYFLAGS =
+ #########################################################################
+ 
+ # Some architecture config.mk files need to know what CPUDIR is set to,
+-- 
+2.11.0
+

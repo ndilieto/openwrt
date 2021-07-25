@@ -1,0 +1,32 @@
+From ce64061cb6815f83f24fc72233998d19fc57b633 Mon Sep 17 00:00:00 2001
+From: Purna Chandra Mandal <purna.mandal@microchip.com>
+Date: Thu, 21 Jan 2016 20:02:51 +0530
+Subject: [PATCH 059/158] MIPS: initialize board_init_f() argument to zero.
+
+Commit a62790997f9a2e50a168c73e752a471590e8cf4f upstream.
+
+Argument boot_flags of board_init_f() should be set to 0 as
+$a0 may be utilized in lowlevel_init() or mips_cache_reset()
+or previous stage boot-loader.
+
+Signed-off-by: Purna Chandra Mandal <purna.mandal@microchip.com>
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index 96092e693d..9100af2c6f 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -142,6 +142,7 @@ reset:
+ 	li	sp, CONFIG_SYS_INIT_SP_ADDR
+ 	move	fp, sp
+ 
++	move	a0, zero		# a0 <-- boot_flags = 0
+ 	la	t9, board_init_f
+ 	jr	t9
+ 	 move	ra, zero
+-- 
+2.11.0
+

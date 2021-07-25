@@ -1,0 +1,476 @@
+From 91178e9b798a2556a1dfd341a314a5c279f64f0f Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 9 Sep 2015 18:58:26 +0200
+Subject: [PATCH 133/158] MIPS: add board support for Zyxel vmg8847 series
+
+This supports VMG8825 and VMG8847.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ board/zyxel/vmg88xx/Makefile       |   7 ++
+ board/zyxel/vmg88xx/config.mk      |   7 ++
+ board/zyxel/vmg88xx/ddr_settings.h |  88 ++++++++++++++++
+ board/zyxel/vmg88xx/vmg88xx.c      | 202 +++++++++++++++++++++++++++++++++++++
+ boards.cfg                         |   2 +
+ include/configs/vmg88xx.h          | 104 +++++++++++++++++++
+ 6 files changed, 410 insertions(+)
+ create mode 100644 board/zyxel/vmg88xx/Makefile
+ create mode 100644 board/zyxel/vmg88xx/config.mk
+ create mode 100644 board/zyxel/vmg88xx/ddr_settings.h
+ create mode 100644 board/zyxel/vmg88xx/vmg88xx.c
+ create mode 100644 include/configs/vmg88xx.h
+
+diff --git a/board/zyxel/vmg88xx/Makefile b/board/zyxel/vmg88xx/Makefile
+new file mode 100644
+index 0000000000..00293c5e7c
+--- /dev/null
++++ b/board/zyxel/vmg88xx/Makefile
+@@ -0,0 +1,7 @@
++#
++# Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-y	= vmg88xx.o
+diff --git a/board/zyxel/vmg88xx/config.mk b/board/zyxel/vmg88xx/config.mk
+new file mode 100644
+index 0000000000..60e2eb4c35
+--- /dev/null
++++ b/board/zyxel/vmg88xx/config.mk
+@@ -0,0 +1,7 @@
++#
++# Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++PLATFORM_CPPFLAGS += -Iboard/$(BOARDDIR)
+diff --git a/board/zyxel/vmg88xx/ddr_settings.h b/board/zyxel/vmg88xx/ddr_settings.h
+new file mode 100644
+index 0000000000..62229afd7a
+--- /dev/null
++++ b/board/zyxel/vmg88xx/ddr_settings.h
+@@ -0,0 +1,88 @@
++/*
++ * Copyright (C) 2014 Lantiq Deutschland GmbH
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#define MC_CCR00_VALUE 0x400
++#define MC_CCR01_VALUE 0x0
++#define MC_CCR02_VALUE 0x20101D1
++#define MC_CCR03_VALUE 0x202040A
++#define MC_CCR04_VALUE 0x30E1303
++#define MC_CCR05_VALUE 0x3020305
++#define MC_CCR06_VALUE 0x3035209
++#define MC_CCR07_VALUE 0x1010000
++#define MC_CCR08_VALUE 0x90504
++#define MC_CCR09_VALUE 0x20000C8
++#define MC_CCR10_VALUE 0x500790B
++#define MC_CCR11_VALUE 0x1000000
++#define MC_CCR12_VALUE 0x91C0027
++#define MC_CCR13_VALUE 0x20000
++#define MC_CCR14_VALUE 0x2A00C8
++#define MC_CCR15_VALUE 0x1000000
++#define MC_CCR16_VALUE 0x0
++#define MC_CCR17_VALUE 0x0
++#define MC_CCR18_VALUE 0x0
++#define MC_CCR19_VALUE 0x202
++#define MC_CCR20_VALUE 0x0
++#define MC_CCR21_VALUE 0x85200
++#define MC_CCR22_VALUE 0x4
++#define MC_CCR23_VALUE 0x0
++#define MC_CCR24_VALUE 0x40852
++#define MC_CCR25_VALUE 0x0
++#define MC_CCR26_VALUE 0x6420000
++#define MC_CCR27_VALUE 0x4
++#define MC_CCR28_VALUE 0x0
++#define MC_CCR29_VALUE 0x40642
++#define MC_CCR30_VALUE 0x0
++#define MC_CCR31_VALUE 0x2010000
++#define MC_CCR32_VALUE 0xf0f0A02
++#define MC_CCR33_VALUE 0x1010101
++#define MC_CCR34_VALUE 0x101
++#define MC_CCR35_VALUE 0x10001
++#define MC_CCR36_VALUE 0x10006
++#define MC_CCR37_VALUE 0x0
++#define MC_CCR38_VALUE 0x0
++#define MC_CCR39_VALUE 0x0
++#define MC_CCR40_VALUE 0x0
++#define MC_CCR41_VALUE 0x2000100
++#define MC_CCR42_VALUE 0x0
++#define MC_CCR43_VALUE 0x1010000
++#define MC_CCR44_VALUE 0x1020201
++#define MC_CCR45_VALUE 0x200
++#define MC_CCR46_VALUE 0x0
++#define MC_CCR47_VALUE 0x0
++#define MC_CCR48_VALUE 0x600
++#define MC_CCR49_VALUE 0x79900
++#define MC_CCR50_VALUE 0x2000200
++#define MC_CCR51_VALUE 0x2000200
++#define MC_CCR52_VALUE 0x799
++#define MC_CCR53_VALUE 0x25fd
++#define MC_CCR54_VALUE 0x20405
++#define MC_CCR55_VALUE 0x101
++#define MC_PHYR0_VALUE 0xf0100
++#define MC_PHYR1_VALUE 0xf4013827
++#define MC_PHYR2_VALUE 0x188002c0
++#define MC_PHYR3_VALUE 0xf4013827
++#define MC_PHYR4_VALUE 0x188002c0
++#define MC_PHYR5_VALUE 0x5
++#define MC_PHYR6_VALUE 0xc0092505
++#define MC_PHYR7_VALUE 0x91F10
++#define MC_PHYR8_VALUE 0xc0092505
++#define MC_PHYR9_VALUE 0x91F10
++
++#define MC_CCR02_VALUE_360 0x201196F
++#define MC_CCR03_VALUE_360 0x202050C
++#define MC_CCR04_VALUE_360 0x3111604
++#define MC_CCR05_VALUE_360 0x3020306
++#define MC_CCR06_VALUE_360 0x303626C
++#define MC_CCR08_VALUE_360 0xC0606
++#define MC_CCR10_VALUE_360 0x6009111
++#define MC_CCR12_VALUE_360 0xAF6002B
++#define MC_CCR14_VALUE_360 0x2E00C8
++#define MC_CCR21_VALUE_360 0xA6200
++#define MC_CCR24_VALUE_360 0x40A62
++#define MC_CCR54_VALUE_360 0x20506
++#define MC_PHYR6_VALUE_360 0xE0092805
++#define MC_PHYR8_VALUE_360 0xE0092805
+diff --git a/board/zyxel/vmg88xx/vmg88xx.c b/board/zyxel/vmg88xx/vmg88xx.c
+new file mode 100644
+index 0000000000..6860027b88
+--- /dev/null
++++ b/board/zyxel/vmg88xx/vmg88xx.c
+@@ -0,0 +1,202 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <phy_lantiq.h>
++#include <asm/gpio.h>
++#include <asm/lantiq/eth.h>
++#include <asm/lantiq/chipid.h>
++#include <asm/lantiq/cpu.h>
++#include <asm/lantiq/mem.h>
++#include <asm/arch/gphy.h>
++
++#if defined(CONFIG_SPL_BUILD) || defined(CONFIG_SYS_BOOT_RAM)
++#define do_gpio_init	1
++#else
++#define do_gpio_init	0
++#endif
++
++static void gpio_init(void)
++{
++	/* GPIO button board reset (low-active) */
++	gpio_direction_input(3);
++	/* GPIO button WLAN enable (low-active) */
++	gpio_direction_input(42);
++	/* GPIO button WPS enable (low-active) */
++	gpio_direction_input(43);
++	/* GPIO button DECT paging (low-active) */
++	gpio_direction_input(61);
++
++	/* IPAC-X interrupt */
++	gpio_direction_input(1);
++	gpio_set_pull(1, GPIO_PULL_UP);
++	/* IPAC-X CS */
++	gpio_direction_output(15, 1);
++
++	/* SLIC reset (low-active) */
++	gpio_direction_output(0, 0);
++	/* SLIC CLK */
++	gpio_direction_output(8, 1);
++	/* SLIC TX */
++	gpio_direction_output(34, 1);
++	/* SLIC RX */
++	gpio_direction_output(35, 1);
++	/* SLIC CLK0_GNT */
++	gpio_direction_output(36, 1);
++
++	/* SPI DIN */
++	gpio_direction_input(16);
++	gpio_set_pull(16, GPIO_PULL_UP);
++	/* SPI DOUT */
++	gpio_direction_output(17, 1);
++	/* SPI CLK */
++	gpio_direction_output(18, 1);
++
++	/* COSIC CS */
++	gpio_direction_output(14, 1);
++	/* COSIC CLK */
++	gpio_direction_output(19, 1);
++	/* COSIC DOUT */
++	gpio_direction_output(10, 1);
++	/* COSIC interrupt */
++	gpio_direction_input(9);
++	gpio_set_pull(9, GPIO_PULL_UP);
++	/* COSIC DIN */
++	gpio_direction_input(11);
++	gpio_set_pull(11, GPIO_PULL_UP);
++
++	/* NAND CS1 */
++	gpio_set_altfunc(23, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND CLE */
++	gpio_set_altfunc(24, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND ALE */
++	gpio_set_altfunc(13, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND RDBY */
++	gpio_set_altfunc(48, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_IN);
++	/* NAND RE */
++	gpio_set_altfunc(49, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND WE */
++	gpio_set_altfunc(59, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND WP */
++	gpio_set_altfunc(60, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[1] */
++	gpio_set_altfunc(50, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[0] */
++	gpio_set_altfunc(51, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[2] */
++	gpio_set_altfunc(52, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[7] */
++	gpio_set_altfunc(53, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[6] */
++	gpio_set_altfunc(54, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[5] */
++	gpio_set_altfunc(55, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[4] */
++	gpio_set_altfunc(56, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* NAND Data[3] */
++	gpio_set_altfunc(57, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++
++	/* LEDC/LED_ST for LED shift register */
++	gpio_set_altfunc(4, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* LEDC/LED_D for LED shift register */
++	gpio_set_altfunc(5, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++	/* LEDC/LED_SH for LED shift register */
++	gpio_set_altfunc(6, GPIO_ALTSEL_SET, GPIO_ALTSEL_CLR, GPIO_DIR_OUT);
++
++	/* TDM/FSC as input, internal pull-up */
++	gpio_direction_input(58);
++	gpio_set_pull(58, GPIO_PULL_UP);
++	/* TDM/DCL as input, internal pull-up */
++	gpio_direction_input(27);
++	gpio_set_pull(27, GPIO_PULL_UP);
++	/* TDM/DI as input */
++	gpio_direction_input(26);
++	/* TDM/DO as input */
++	gpio_direction_input(25);
++}
++
++int board_early_init_f(void)
++{
++	if (do_gpio_init) {
++		ltq_gpio_init();
++		gpio_init();
++	}
++
++	return 0;
++}
++
++int checkboard(void)
++{
++	puts("Board: " CONFIG_BOARD_NAME "\n");
++	ltq_chip_print_info();
++
++	return 0;
++}
++
++int misc_init_r(void)
++{
++#if 0
++	return mc_tune_store_flash();
++#else
++	return 0;
++#endif
++}
++
++int ltq_phy_board_init(struct phy_device *phydev)
++{
++	/* LED0 */
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED0H, 0x0);
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED0L, 0x0);
++	/* LED1 */
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED1H, 0x70);
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED1L, 0x03);
++	/* LED2 */
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED2H, 0x0);
++	ltq_phy_mmd_write(phydev, LTQ_PHY_MMD_LED2L, 0x0);
++
++	return 0;
++}
++
++static const struct ltq_eth_port_config eth_port_config[] = {
++	/* GMAC0: Quantenna QSR1000 5G WiFi at xMII0 */
++	{ 0, 0x0, LTQ_ETH_PORT_NONE, PHY_INTERFACE_MODE_NONE },
++	/* GMAC1: internal GPHY2 with 1000 firmware for LAN port ? */
++	{ 1, 0x1, LTQ_ETH_PORT_PHY, PHY_INTERFACE_MODE_GMII },
++	/* GMAC2: internal GPHY0 with 1000 firmware for LAN port ? */
++	{ 2, 0x2, LTQ_ETH_PORT_PHY, PHY_INTERFACE_MODE_GMII },
++	/* GMAC3: internal GPHY3 with 1000 firmware for LAN port ? */
++	{ 3, 0x3, LTQ_ETH_PORT_PHY, PHY_INTERFACE_MODE_GMII },
++	/* GMAC4: internal GPHY1 with 1000 firmware for LAN port ? */
++	{ 4, 0x4, LTQ_ETH_PORT_PHY, PHY_INTERFACE_MODE_GMII },
++	/* GMAC5: Mediatek M7620A 2.4G WiFi at xMII1 */
++	{ 5, 0x14, LTQ_ETH_PORT_NONE, PHY_INTERFACE_MODE_NONE },
++};
++
++static const struct ltq_eth_board_config eth_board_config = {
++	.ports = eth_port_config,
++	.num_ports = ARRAY_SIZE(eth_port_config),
++};
++
++int board_eth_init(bd_t * bis)
++{
++	const enum ltq_gphy_clk clk = LTQ_GPHY_CLK_25MHZ_PLL0;
++	void *fw_addr;
++
++	fw_addr = ltq_gphy_alloc();
++	if (!fw_addr)
++		return -1;
++
++	ltq_gphy_phy11g_a21_load(fw_addr);
++
++	ltq_cgu_gphy_clk_src(clk);
++
++	ltq_rcu_gphy_boot(0, fw_addr);
++	ltq_rcu_gphy_boot(1, fw_addr);
++	ltq_rcu_gphy_boot(2, fw_addr);
++	ltq_rcu_gphy_boot(3, fw_addr);
++
++	return ltq_eth_initialize(&eth_board_config);
++}
+diff --git a/boards.cfg b/boards.cfg
+index 0dea4d37fb..96e212657b 100644
+--- a/boards.cfg
++++ b/boards.cfg
+@@ -524,6 +524,8 @@ Active  mips        mips32         danube      lantiq          easy50712
+ Active  mips        mips32         danube      lantiq          easy50712           easy50712_ram                         easy50712:SYS_BOOT_RAM                                                                                                            Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+ Active  mips        mips32         xrx330      lantiq          easy330             easy330_nandhwspl                     easy330:SYS_BOOT_NANDHWSPL                                                                                                        Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+ Active  mips        mips32         xrx330      lantiq          easy330             easy330_ram                           easy330:SYS_BOOT_RAM                                                                                                              Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
++Active  mips        mips32         xrx330      zyxel           vmg88xx             vmg88xx_nandhwspl                     vmg88xx:SYS_BOOT_NANDHWSPL                                                                                                        Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
++Active  mips        mips32         xrx330      zyxel           vmg88xx             vmg88xx_ram                           vmg88xx:SYS_BOOT_RAM                                                                                                              Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+ Active  mips        mips32         vrx200      lantiq          easy220             easy220_ram                           easy220:SYS_BOOT_RAM                                                                                                              Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+ Active  mips        mips32         vrx200      lantiq          easy220             easy220_sfspl                         easy220:SYS_BOOT_SFSPL                                                                                                            Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+ Active  mips        mips32         vrx200      lantiq          easy80920           easy80920_nandspl                     easy80920:SYS_BOOT_NANDSPL                                                                                                        Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+diff --git a/include/configs/vmg88xx.h b/include/configs/vmg88xx.h
+new file mode 100644
+index 0000000000..0ce7228f89
+--- /dev/null
++++ b/include/configs/vmg88xx.h
+@@ -0,0 +1,104 @@
++/*
++ * Copyright (C) 2015 Daniel Schwierzeck, daniel.schwierzeck@gmail.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#define CONFIG_IDENT_STRING	" vmg8847"
++#define CONFIG_BOARD_NAME	"Zyxel vmg8847 series [510, 511, 512, 513]"
++
++/* Configure SoC */
++#define CONFIG_LTQ_SUPPORT_UART		/* Enable ASC and UART */
++
++#define CONFIG_LTQ_SUPPORT_ETHERNET	/* Enable ethernet */
++#define CONFIG_FW_XRX300_PHY11G_A21
++
++#define CONFIG_LTQ_SSIO_SHIFT_REGS	3
++#define CONFIG_LTQ_SSIO_EDGE_FALLING
++
++#define CONFIG_LTQ_SSIO_GPHY1_MODE	0x2
++#define CONFIG_LTQ_SSIO_GPHY2_MODE	0x2
++#define CONFIG_LTQ_SSIO_GPHY3_MODE	0x2
++#define CONFIG_LTQ_SSIO_GPHY4_MODE	0x2
++#define CONFIG_LTQ_SSIO_INIT_VALUE	0xc00	/* red pwr LED, PCIE0 reset */
++
++#define CONFIG_LTQ_SUPPORT_HSNAND_FLASH
++#define CONFIG_LTQ_NAND_CS1
++#define CONFIG_LTQ_NAND_ECC_REED_SOLOMON
++#define CONFIG_LTQ_NAND_BITFLIP_DETECT
++
++#define CONFIG_LTQ_SUPPORT_SPL_NAND_FLASH	/* Build NAND flash SPL */
++#define CONFIG_SYS_NAND_PAGE_SIZE	0x800
++#define CONFIG_SYS_NAND_BLOCK_SIZE	0x20000
++#define CONFIG_LTQ_SPL_SWAP
++#define CONFIG_LTQ_SPL_REDUND_IMAGES	0x1
++
++#define CONFIG_LTQ_SPL_COMP_LZO
++#define CONFIG_LTQ_SPL_CONSOLE
++#define CONFIG_LTQ_SPL_MC_TUNE
++#define CONFIG_MISC_INIT_R
++
++/* MTD devices */
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++#define CONFIG_CMD_MTD
++#define CONFIG_CMD_MTDPARTS
++#define CONFIG_CMD_UBI
++#define CONFIG_RBTREE
++#define CONFIG_MTD_UBI_BEB_LIMIT	30
++#define MTDIDS_DEFAULT			"nand0=nand-xway"
++#define MTDPARTS_DEFAULT		\
++	"mtdparts=nand-xway:768k(uboot_fix),-(ubi)"
++
++#if defined(CONFIG_SYS_BOOT_NANDHWSPL)
++#define CONFIG_SPL_MC_TUNE_OFFS		0x1a000
++#define CONFIG_SPL_U_BOOT_OFFS		0x20000
++#define CONFIG_SPL_U_BOOT_SIZE		0x40000
++
++#define CONFIG_ENV_IS_IN_UBI
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_ENV_UBI_PART		"ubi"
++#define CONFIG_ENV_UBI_VOLUME		"uboot_env"
++#define CONFIG_ENV_UBI_VID_HDR_OFF	"2048"
++#else
++#define CONFIG_ENV_IS_NOWHERE
++#endif
++
++#define CONFIG_ENV_SIZE			(8 * 1024)
++
++/* Console */
++#define CONFIG_LTQ_ADVANCED_CONSOLE
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_CONSOLE_ASC		1
++
++/* Commands */
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_MISC
++#define CONFIG_CMD_ECHO
++
++/* Boot */
++#define CONFIG_MIPS_BOOT_FDT
++#define CONFIG_FIT
++#define CONFIG_OF_LIBFDT
++#define CONFIG_LZMA
++#define CONFIG_LZO
++
++/* Environment */
++#define CONFIG_LOADADDR			CONFIG_SYS_LOAD_ADDR
++
++#define CONFIG_ENV_MTDPARTS			\
++	"mtdids="MTDIDS_DEFAULT"\0"		\
++	"mtdparts="MTDPARTS_DEFAULT"\0"
++
++/* Pull in default board configs for Lantiq XWAY XRX330 */
++#include <asm/lantiq/config.h>
++#include <asm/arch/config.h>
++
++#define CONFIG_EXTRA_ENV_SETTINGS	\
++	CONFIG_ENV_LANTIQ_DEFAULTS	\
++	CONFIG_ENV_MTDPARTS
++
++#endif /* __CONFIG_H */
+-- 
+2.11.0
+

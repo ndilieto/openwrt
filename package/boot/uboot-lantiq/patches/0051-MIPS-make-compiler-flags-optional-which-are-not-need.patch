@@ -1,0 +1,37 @@
+From eec9022f115728a17ca0461c2e649aba69cf3d27 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:48:19 +0100
+Subject: [PATCH 051/158] MIPS: make compiler flags optional which are not
+ needed in SPL
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/config.mk | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/arch/mips/config.mk b/arch/mips/config.mk
+index 518d141444..67ef5e7797 100644
+--- a/arch/mips/config.mk
++++ b/arch/mips/config.mk
+@@ -49,10 +49,14 @@ __HAVE_ARCH_GENERIC_BOARD := y
+ # On the other hand, we want PIC in the U-Boot code to relocate it from ROM
+ # to RAM. $28 is always used as gp.
+ #
+-PLATFORM_CPPFLAGS		+= -G 0 -mabicalls -fpic $(ENDIANNESS)
++PF_ABICALLS			?= -mabicalls
++PF_PIC				?= -fpic
++PF_PIE				?= -pie
++PF_OBJCOPY			?= -j .got -j .u_boot_list -j .rel.dyn -j .padding
++
++PLATFORM_CPPFLAGS		+= -G 0 $(PF_ABICALLS) $(PF_PIC) $(ENDIANNESS)
+ PLATFORM_CPPFLAGS		+= -msoft-float
+ PLATFORM_LDFLAGS		+= -G 0 -static -n -nostdlib $(ENDIANNESS)
+ PLATFORM_RELFLAGS		+= -ffunction-sections -fdata-sections
+-LDFLAGS_FINAL			+= --gc-sections -pie
+-OBJCOPYFLAGS			+= -j .text -j .rodata -j .data -j .got
+-OBJCOPYFLAGS			+= -j .u_boot_list -j .rel.dyn -j .padding
++LDFLAGS_FINAL			+= --gc-sections $(PF_PIE)
++OBJCOPYFLAGS			+= -j .text -j .rodata -j .data $(PF_OBJCOPY)
+-- 
+2.11.0
+

@@ -1,0 +1,40 @@
+From 06a943bac681e8feb8673e6c5a3b0dd0fa3bdac9 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 23 Sep 2015 13:33:55 +0200
+Subject: [PATCH 089/158] common/cmd_mtdparts: adapt to updated MTD layer
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ common/cmd_mtdparts.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/common/cmd_mtdparts.c b/common/cmd_mtdparts.c
+index 06b631d002..1ff4ea659f 100644
+--- a/common/cmd_mtdparts.c
++++ b/common/cmd_mtdparts.c
+@@ -1224,11 +1224,11 @@ static uint64_t net_part_size(struct mtd_info *mtd, struct part_info *part)
+ {
+ 	uint64_t i, net_size = 0;
+ 
+-	if (!mtd->block_isbad)
++	if (!mtd->_block_isbad)
+ 		return part->size;
+ 
+ 	for (i = 0; i < part->size; i += mtd->erasesize) {
+-		if (!mtd->block_isbad(mtd, part->offset + i))
++		if (!mtd->_block_isbad(mtd, part->offset + i))
+ 			net_size += mtd->erasesize;
+ 	}
+ 
+@@ -1265,7 +1265,7 @@ static void print_partition_table(void)
+ 			part = list_entry(pentry, struct part_info, link);
+ 			net_size = net_part_size(mtd, part);
+ 			size_note = part->size == net_size ? " " : " (!)";
+-			printf("%2d: %-20s0x%08x\t0x%08x%s\t0x%08x\t%d\n",
++			printf("%2d: %-20s0x%08llx\t0x%08x%s\t0x%08llx\t%d\n",
+ 					part_num, part->name, part->size,
+ 					net_size, size_note, part->offset,
+ 					part->mask_flags);
+-- 
+2.11.0
+

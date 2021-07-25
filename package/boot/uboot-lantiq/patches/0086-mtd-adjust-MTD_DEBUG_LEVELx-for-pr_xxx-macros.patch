@@ -1,0 +1,35 @@
+From 504ee3931bd77c5dfe3a8b0619daa516cc607871 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Thu, 17 Sep 2015 17:44:59 +0200
+Subject: [PATCH 086/158] mtd: adjust MTD_DEBUG_LEVELx for pr_xxx() macros
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ include/linux/mtd/mtd.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index 29434aa3a2..10aeff0a7c 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -445,7 +445,7 @@ static inline void mtd_erase_callback(struct erase_info *instr)
+ #define MTD_DEBUG_LEVEL3	(3)	/* Noisy   */
+ 
+ #ifdef CONFIG_MTD_DEBUG
+-#define pr_debug(args...)	MTDDEBUG(MTD_DEBUG_LEVEL0, args)
++#define pr_debug(args...)	MTDDEBUG(MTD_DEBUG_LEVEL2, args)
+ #define MTDDEBUG(n, args...)				\
+ 	do {						\
+ 		if (n <= CONFIG_MTD_DEBUG_VERBOSE)	\
+@@ -460,7 +460,7 @@ static inline void mtd_erase_callback(struct erase_info *instr)
+ 	} while(0)
+ #endif /* CONFIG_MTD_DEBUG */
+ #define pr_info(args...)	MTDDEBUG(MTD_DEBUG_LEVEL0, args)
+-#define pr_warn(args...)	MTDDEBUG(MTD_DEBUG_LEVEL0, args)
++#define pr_warn(args...)	MTDDEBUG(MTD_DEBUG_LEVEL1, args)
+ #define pr_err(args...)		MTDDEBUG(MTD_DEBUG_LEVEL0, args)
+ #define pr_crit(args...)	MTDDEBUG(MTD_DEBUG_LEVEL0, args)
+ #define pr_cont(args...)	MTDDEBUG(MTD_DEBUG_LEVEL0, args)
+-- 
+2.11.0
+

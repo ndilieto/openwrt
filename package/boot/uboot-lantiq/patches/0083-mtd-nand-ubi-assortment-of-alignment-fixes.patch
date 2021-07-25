@@ -1,0 +1,151 @@
+From 14c051ed3ded0266132e0d56a18b8b92456abd7d Mon Sep 17 00:00:00 2001
+From: Marcel Ziswiler <marcel.ziswiler@toradex.com>
+Date: Tue, 18 Aug 2015 13:06:37 +0200
+Subject: [PATCH 083/158] mtd/nand/ubi: assortment of alignment fixes
+
+Various U-Boot adoptions/extensions to MTD/NAND/UBI did not take buffer
+alignment into account which led to failures of the following form:
+
+ERROR: v7_dcache_inval_range - start address is not aligned - 0x1f7f0108
+ERROR: v7_dcache_inval_range - stop address is not aligned - 0x1f7f1108
+
+Signed-off-by: Marcel Ziswiler <marcel.ziswiler@toradex.com>
+Reviewed-by: Simon Glass <sjg@chromium.org>
+Acked-by: Scott Wood <scottwood@freescale.com>
+[trini: Add __UBOOT__ hunk to lib/zlib/zutil.c due to malloc.h in common.h]
+Signed-off-by: Tom Rini <trini@konsulko.com>
+---
+ common/cmd_ubi.c             | 2 +-
+ drivers/mtd/nand/nand_util.c | 2 +-
+ fs/ubifs/super.c             | 5 +++--
+ fs/ubifs/ubifs.c             | 4 ++--
+ include/common.h             | 9 +++++++++
+ lib/gzip.c                   | 2 +-
+ lib/zlib/zutil.c             | 2 ++
+ 7 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/common/cmd_ubi.c b/common/cmd_ubi.c
+index 6bd610ffd5..41e397f29b 100644
+--- a/common/cmd_ubi.c
++++ b/common/cmd_ubi.c
+@@ -363,7 +363,7 @@ int ubi_volume_read(char *volume, char *buf, size_t size)
+ 	tbuf_size = vol->usable_leb_size;
+ 	if (size < tbuf_size)
+ 		tbuf_size = ALIGN(size, ubi->min_io_size);
+-	tbuf = malloc(tbuf_size);
++	tbuf = malloc_cache_aligned(tbuf_size);
+ 	if (!tbuf) {
+ 		printf("NO MEM\n");
+ 		return ENOMEM;
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index ee2c24df3b..21b4a618ce 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -839,7 +839,7 @@ int nand_torture(nand_info_t *nand, loff_t offset)
+ 
+ 	patt_count = ARRAY_SIZE(patterns);
+ 
+-	buf = malloc(nand->erasesize);
++	buf = malloc_cache_aligned(nand->erasesize);
+ 	if (buf == NULL) {
+ 		puts("Out of memory for erase block buffer\n");
+ 		return -ENOMEM;
+diff --git a/fs/ubifs/super.c b/fs/ubifs/super.c
+index 85142c7bb6..4a47441636 100644
+--- a/fs/ubifs/super.c
++++ b/fs/ubifs/super.c
+@@ -58,7 +58,8 @@ struct inode *iget_locked(struct super_block *sb, unsigned long ino)
+ {
+ 	struct inode *inode;
+ 
+-	inode = (struct inode *)malloc(sizeof(struct ubifs_inode));
++	inode = (struct inode *)malloc_cache_aligned(
++			sizeof(struct ubifs_inode));
+ 	if (inode) {
+ 		inode->i_ino = ino;
+ 		inode->i_sb = sb;
+@@ -105,7 +106,7 @@ void iput(struct inode *inode)
+ 	/*
+ 	 * Allocate and use new inode
+ 	 */
+-	ino = (struct inode *)malloc(sizeof(struct ubifs_inode));
++	ino = (struct inode *)malloc_cache_aligned(sizeof(struct ubifs_inode));
+ 	memcpy(ino, inode, sizeof(struct ubifs_inode));
+ 
+ 	/*
+diff --git a/fs/ubifs/ubifs.c b/fs/ubifs/ubifs.c
+index b91a6fd26f..612010688c 100644
+--- a/fs/ubifs/ubifs.c
++++ b/fs/ubifs/ubifs.c
+@@ -109,7 +109,7 @@ static inline struct crypto_comp *crypto_alloc_comp(const char *alg_name,
+ 	struct crypto_comp *ptr;
+ 	int i = 0;
+ 
+-	ptr = malloc(sizeof(struct crypto_comp));
++	ptr = malloc_cache_aligned(sizeof(struct crypto_comp));
+ 	while (i < UBIFS_COMPR_TYPES_CNT) {
+ 		comp = ubifs_compressors[i];
+ 		if (!comp) {
+@@ -718,7 +718,7 @@ static int do_readpage(struct ubifs_info *c, struct inode *inode,
+ 				 * destination area to a multiple of
+ 				 * UBIFS_BLOCK_SIZE.
+ 				 */
+-				buff = malloc(UBIFS_BLOCK_SIZE);
++				buff = malloc_cache_aligned(UBIFS_BLOCK_SIZE);
+ 				if (!buff) {
+ 					printf("%s: Error, malloc fails!\n",
+ 					       __func__);
+diff --git a/include/common.h b/include/common.h
+index 82c0a5a9a6..4543831e1f 100644
+--- a/include/common.h
++++ b/include/common.h
+@@ -1058,6 +1058,15 @@ static inline phys_addr_t map_to_sysmem(const void *ptr)
+ #define DEFINE_CACHE_ALIGN_BUFFER(type, name, size)			\
+ 	DEFINE_ALIGN_BUFFER(type, name, size, ARCH_DMA_MINALIGN)
+ 
++#ifndef __ASSEMBLY__
++#include <malloc.h>
++
++static inline void *malloc_cache_aligned(size_t size)
++{
++	return memalign(ARCH_DMA_MINALIGN, ALIGN(size, ARCH_DMA_MINALIGN));
++}
++#endif
++
+ /* Pull in stuff for the build system */
+ #ifdef DO_DEPS_ONLY
+ # include <environment.h>
+diff --git a/lib/gzip.c b/lib/gzip.c
+index ff37d4f31b..cd8e9fea43 100644
+--- a/lib/gzip.c
++++ b/lib/gzip.c
+@@ -25,7 +25,7 @@ static void *zalloc(void *x, unsigned items, unsigned size)
+ 	size *= items;
+ 	size = (size + ZALLOC_ALIGNMENT - 1) & ~(ZALLOC_ALIGNMENT - 1);
+ 
+-	p = malloc (size);
++	p = malloc_cache_aligned(size);
+ 
+ 	return (p);
+ }
+diff --git a/lib/zlib/zutil.c b/lib/zlib/zutil.c
+index 14f6eb1e07..173a81d1ea 100644
+--- a/lib/zlib/zutil.c
++++ b/lib/zlib/zutil.c
+@@ -43,11 +43,13 @@ void z_error (m)
+  */
+ #ifndef MY_ZCALLOC /* Any system without a special alloc function */
+ 
++#ifndef __UBOOT__
+ #ifndef STDC
+ extern voidp    malloc OF((uInt size));
+ extern voidp    calloc OF((uInt items, uInt size));
+ extern void     free   OF((voidpf ptr));
+ #endif
++#endif
+ 
+ voidpf zcalloc(voidpf opaque, unsigned items, unsigned size)
+ {
+-- 
+2.11.0
+

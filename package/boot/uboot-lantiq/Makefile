@@ -8,12 +8,10 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=u-boot
-PKG_VERSION:=2013.10
+PKG_VERSION:=2014.07
 PKG_RELEASE:=1
 
-PKG_HASH:=0d71e62beb952b41ebafb20a7ee4df2f960db64c31b054721ceb79ff14014c55
-
-FIRMWARE_LANTIQ_SOURCE:=$(TOPDIR)/target/linux/lantiq/files/firmware/lantiq
+PKG_HASH:=b4f83b8db325c21671a997198ec3a373e2e00dde2fcf17be9b9afd7cfd727f56
 
 include $(INCLUDE_DIR)/u-boot.mk
 include $(INCLUDE_DIR)/package.mk
@@ -294,6 +292,20 @@ define U-Boot/p2812hnufx_nandspl
   DEPENDS+=@BROKEN
 endef
 
+define U-Boot/slx501_sfspl
+  NAME:=ZyXEL SpeedLink 5501 (SPI SPL)
+  BUILD_SUBTARGET:=xrx200
+  BUILD_DEVICES:=zyxel_sl5501
+  UBOOT_IMAGE:=u-boot.ltq.lzo.sfspl
+endef
+
+define U-Boot/slx501_ram
+  NAME:=ZyXEL SpeedLink 5501 (RAM)
+  BUILD_SUBTARGET:=xrx200
+  BUILD_DEVICES:=zyxel_sl5501
+  DDR_SETTINGS:=board/zyxel/slx501/ddr_settings.h
+endef
+
 define U-Boot/vgv7510kw22_brn
   NAME:=Arcadyan VGV7510KW22 (BRN)
   BUILD_SUBTARGET:=xrx200
@@ -348,22 +360,14 @@ UBOOT_TARGETS:= \
 	easy80920_ram easy80920_nor easy80920_norspl easy80920_sfspl \
 	fb3370_eva fb3370_ram fb3370_sfspl \
 	p2812hnufx_ram p2812hnufx_nandspl \
+	slx501_ram slx501_sfspl \
 	vgv7510kw22_brn vgv7510kw22_nor vgv7510kw22_ram \
 	vgv7519_brn vgv7519_nor vgv7519_ram
 
-define CompressVR9Firmware
-	$(STAGING_DIR_HOST)/bin/lzma e \
-		$(FIRMWARE_LANTIQ_SOURCE)/xrx200_phy$(1)_a$(2)$(3).bin \
-		$(PKG_BUILD_DIR)/arch/mips/cpu/mips32/vrx200/fw_phy$(1)_a$(2)x.blob
-endef
-
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	mkdir -p $(PKG_BUILD_DIR)/arch/mips/cpu/mips32/vrx200/
-	$(call CompressVR9Firmware,11g,1,4)
-	$(call CompressVR9Firmware,11g,2,2)
-	$(call CompressVR9Firmware,22f,1,4)
-	$(call CompressVR9Firmware,22f,2,2)
+	mkdir -p $(PKG_BUILD_DIR)/firmware/lantiq
+	cp -r ./firmware/*.fw $(PKG_BUILD_DIR)/firmware/lantiq
 endef
 
 UBOOT_MAKE_FLAGS :=
@@ -378,7 +382,7 @@ define Package/u-boot/install/uart
 	awk -f $(PKG_BUILD_DIR)/tools/lantiq_ram_init_uart.awk \
 		-v soc=$(SOC) $(PKG_BUILD_DIR)/$(DDR_SETTINGS) \
 		> $(PKG_BUILD_DIR)/ddr_settings
-	perl $(PKG_BUILD_DIR)/tools/gct.pl \
+	perl $(PKG_BUILD_DIR)/tools/lantiq_uart_image.pl \
 		$(PKG_BUILD_DIR)/ddr_settings $(PKG_BUILD_DIR)/u-boot.srec \
 		$(1)/u-boot.asc
 endef

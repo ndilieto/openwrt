@@ -1,0 +1,65 @@
+From b79e86fe7a00f03b63fc319f5c2b8ead335ded56 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sun, 16 Nov 2014 01:27:23 +0100
+Subject: [PATCH 027/158] MIPS: bootm: add missing initramfs relocation
+
+Commit c9639421fd877fa0e95d7744dade002042eb721e upstream.
+
+The initramfs is currently only relocated if the user calls
+the bootm ramdisk subcommand. If bootm should be used without
+subcommands, the arch-specific bootm code needs to implement
+the relocation.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index 71bb0d2a19..f947fd6c9e 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -52,6 +52,20 @@ void arch_lmb_reserve(struct lmb *lmb)
+ 	lmb_reserve(lmb, sp, CONFIG_SYS_SDRAM_BASE + gd->ram_size - sp);
+ }
+ 
++static int boot_setup_linux(bootm_headers_t *images)
++{
++	int ret;
++	ulong rd_len;
++
++	rd_len = images->rd_end - images->rd_start;
++	ret = boot_ramdisk_high(&images->lmb, images->rd_start,
++		rd_len, &images->initrd_start, &images->initrd_end);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++
+ static void linux_cmdline_init(void)
+ {
+ 	linux_argc = 1;
+@@ -224,6 +238,8 @@ static void boot_jump_linux(bootm_headers_t *images)
+ int do_bootm_linux(int flag, int argc, char * const argv[],
+ 			bootm_headers_t *images)
+ {
++	int ret;
++
+ 	/* No need for those on MIPS */
+ 	if (flag & BOOTM_STATE_OS_BD_T)
+ 		return -1;
+@@ -243,6 +259,10 @@ int do_bootm_linux(int flag, int argc, char * const argv[],
+ 		return 0;
+ 	}
+ 
++	ret = boot_setup_linux(images);
++	if (ret)
++		return ret;
++
+ 	boot_cmdline_linux(images);
+ 	boot_prep_linux(images);
+ 	boot_jump_linux(images);
+-- 
+2.11.0
+

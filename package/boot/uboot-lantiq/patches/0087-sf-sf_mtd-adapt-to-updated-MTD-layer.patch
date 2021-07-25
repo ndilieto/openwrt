@@ -1,0 +1,25 @@
+From fb426e3fcfa56defd9b8c2d704eeb85d9d81f742 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 3 Jan 2017 00:25:27 +0100
+Subject: [PATCH 087/158] sf: sf_mtd: adapt to updated MTD layer
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ drivers/mtd/spi/sf_mtd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/mtd/spi/sf_mtd.c b/drivers/mtd/spi/sf_mtd.c
+index f5112c4f82..0b9cb62261 100644
+--- a/drivers/mtd/spi/sf_mtd.c
++++ b/drivers/mtd/spi/sf_mtd.c
+@@ -81,6 +81,7 @@ int spi_flash_mtd_register(struct spi_flash *flash)
+ 	sf_mtd_info.type = MTD_NORFLASH;
+ 	sf_mtd_info.flags = MTD_CAP_NORFLASH;
+ 	sf_mtd_info.writesize = 1;
++	sf_mtd_info.writebufsize = flash->page_size;
+ 
+ 	sf_mtd_info._erase = spi_flash_mtd_erase;
+ 	sf_mtd_info._read = spi_flash_mtd_read;
+-- 
+2.11.0
+

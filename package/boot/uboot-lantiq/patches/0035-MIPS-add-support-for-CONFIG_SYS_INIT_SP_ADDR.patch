@@ -1,0 +1,70 @@
+From eb6d5ff46ed63ee0e55198b8f0af06e95252b4e9 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sun, 18 Jan 2015 22:18:38 +0100
+Subject: [PATCH 035/158] MIPS: add support for CONFIG_SYS_INIT_SP_ADDR
+
+Commit dd82128ef5e9fc660862a0a60423aa01a03de5d4 upstream.
+
+Support the existing config option CONFIG_SYS_INIT_SP_ADDR on
+MIPS. This allows to move the initial stack to other places
+than the beginning of RAM.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S | 7 ++++++-
+ arch/mips/cpu/mips64/start.S | 7 ++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index 384ea26022..59468590a9 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -15,6 +15,11 @@
+ #define CONFIG_SYS_MIPS_CACHE_MODE CONF_CM_CACHABLE_NONCOHERENT
+ #endif
+ 
++#ifndef CONFIG_SYS_INIT_SP_ADDR
++#define CONFIG_SYS_INIT_SP_ADDR	(CONFIG_SYS_SDRAM_BASE + \
++				CONFIG_SYS_INIT_SP_OFFSET)
++#endif
++
+ 	/*
+ 	 * For the moment disable interrupts, mark the kernel mode and
+ 	 * set ST0_KX so that the CPU does not spit fire when using
+@@ -135,7 +140,7 @@ reset:
+ #endif
+ 
+ 	/* Set up temporary stack */
+-	li	sp, CONFIG_SYS_SDRAM_BASE + CONFIG_SYS_INIT_SP_OFFSET
++	li	sp, CONFIG_SYS_INIT_SP_ADDR
+ 	move	fp, sp
+ 
+ 	la	t9, board_init_f
+diff --git a/arch/mips/cpu/mips64/start.S b/arch/mips/cpu/mips64/start.S
+index 6ff714e8ed..81df923bc3 100644
+--- a/arch/mips/cpu/mips64/start.S
++++ b/arch/mips/cpu/mips64/start.S
+@@ -15,6 +15,11 @@
+ #define CONFIG_SYS_MIPS_CACHE_MODE CONF_CM_CACHABLE_NONCOHERENT
+ #endif
+ 
++#ifndef CONFIG_SYS_INIT_SP_ADDR
++#define CONFIG_SYS_INIT_SP_ADDR	(CONFIG_SYS_SDRAM_BASE + \
++				CONFIG_SYS_INIT_SP_OFFSET)
++#endif
++
+ #ifdef CONFIG_SYS_LITTLE_ENDIAN
+ #define MIPS64_R_INFO(ssym, r_type3, r_type2, r_type) \
+ 	(((r_type) << 24) | ((r_type2) << 16) | ((r_type3) << 8) | (ssym))
+@@ -129,7 +134,7 @@ reset:
+ #endif
+ 
+ 	/* Set up temporary stack */
+-	dli	sp, CONFIG_SYS_SDRAM_BASE + CONFIG_SYS_INIT_SP_OFFSET
++	dli	sp, CONFIG_SYS_INIT_SP_ADDR
+ 	move	fp, sp
+ 
+ 	dla	t9, board_init_f
+-- 
+2.11.0
+

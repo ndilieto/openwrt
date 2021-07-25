@@ -1,0 +1,863 @@
+From e9164be7b25278c63b639c6f62f99d98686867c3 Mon Sep 17 00:00:00 2001
+From: Heiko Schocher <hs@denx.de>
+Date: Tue, 15 Jul 2014 16:08:43 +0200
+Subject: [PATCH 071/158] mtd,ubi,ubifs: sync with linux v3.15
+
+snyc with linux v3.15:
+
+commit 1860e379875dfe7271c649058aeddffe5afd9d0d
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Date:   Sun Jun 8 11:19:54 2014 -0700
+
+    Linux 3.15
+
+Signed-off-by: Heiko Schocher <hs@denx.de>
+Cc: Scott Wood <scottwood@freescale.com>
+Cc: Tom Rini <trini@ti.com>
+---
+ drivers/mtd/mtdcore.c        |  24 ++++--
+ drivers/mtd/mtdpart.c        |  14 ++--
+ drivers/mtd/nand/nand_base.c | 174 +++++++++++++++++++++++++++++++++++--------
+ drivers/mtd/nand/nand_ids.c  |   3 +
+ drivers/mtd/ubi/build.c      |  11 +++
+ drivers/mtd/ubi/ubi.h        |  21 +++++-
+ drivers/mtd/ubi/wl.c         |   6 ++
+ fs/ubifs/super.c             |   5 +-
+ include/linux/mtd/mtd.h      |  16 ++--
+ include/linux/mtd/nand.h     | 113 +++++++++++++++++++++++++---
+ include/mtd/ubi-user.h       |  22 ++++++
+ 11 files changed, 341 insertions(+), 68 deletions(-)
+
+diff --git a/drivers/mtd/mtdcore.c b/drivers/mtd/mtdcore.c
+index 796ac0729e..c8934506fb 100644
+--- a/drivers/mtd/mtdcore.c
++++ b/drivers/mtd/mtdcore.c
+@@ -1009,14 +1009,14 @@ EXPORT_SYMBOL_GPL(mtd_read_oob);
+  * devices. The user data is one time programmable but the factory data is read
+  * only.
+  */
+-int mtd_get_fact_prot_info(struct mtd_info *mtd, struct otp_info *buf,
+-			   size_t len)
++int mtd_get_fact_prot_info(struct mtd_info *mtd, size_t len, size_t *retlen,
++			   struct otp_info *buf)
+ {
+ 	if (!mtd->_get_fact_prot_info)
+ 		return -EOPNOTSUPP;
+ 	if (!len)
+ 		return 0;
+-	return mtd->_get_fact_prot_info(mtd, buf, len);
++	return mtd->_get_fact_prot_info(mtd, len, retlen, buf);
+ }
+ EXPORT_SYMBOL_GPL(mtd_get_fact_prot_info);
+ 
+@@ -1032,14 +1032,14 @@ int mtd_read_fact_prot_reg(struct mtd_info *mtd, loff_t from, size_t len,
+ }
+ EXPORT_SYMBOL_GPL(mtd_read_fact_prot_reg);
+ 
+-int mtd_get_user_prot_info(struct mtd_info *mtd, struct otp_info *buf,
+-			   size_t len)
++int mtd_get_user_prot_info(struct mtd_info *mtd, size_t len, size_t *retlen,
++			   struct otp_info *buf)
+ {
+ 	if (!mtd->_get_user_prot_info)
+ 		return -EOPNOTSUPP;
+ 	if (!len)
+ 		return 0;
+-	return mtd->_get_user_prot_info(mtd, buf, len);
++	return mtd->_get_user_prot_info(mtd, len, retlen, buf);
+ }
+ EXPORT_SYMBOL_GPL(mtd_get_user_prot_info);
+ 
+@@ -1058,12 +1058,22 @@ EXPORT_SYMBOL_GPL(mtd_read_user_prot_reg);
+ int mtd_write_user_prot_reg(struct mtd_info *mtd, loff_t to, size_t len,
+ 			    size_t *retlen, u_char *buf)
+ {
++	int ret;
++
+ 	*retlen = 0;
+ 	if (!mtd->_write_user_prot_reg)
+ 		return -EOPNOTSUPP;
+ 	if (!len)
+ 		return 0;
+-	return mtd->_write_user_prot_reg(mtd, to, len, retlen, buf);
++	ret = mtd->_write_user_prot_reg(mtd, to, len, retlen, buf);
++	if (ret)
++		return ret;
++
++	/*
++	 * If no data could be written at all, we are out of memory and
++	 * must return -ENOSPC.
++	 */
++	return (*retlen) ? 0 : -ENOSPC;
+ }
+ EXPORT_SYMBOL_GPL(mtd_write_user_prot_reg);
+ 
+diff --git a/drivers/mtd/mtdpart.c b/drivers/mtd/mtdpart.c
+index d20b8578e7..20ad2ae34a 100644
+--- a/drivers/mtd/mtdpart.c
++++ b/drivers/mtd/mtdpart.c
+@@ -178,11 +178,12 @@ static int part_read_user_prot_reg(struct mtd_info *mtd, loff_t from,
+ 						 retlen, buf);
+ }
+ 
+-static int part_get_user_prot_info(struct mtd_info *mtd,
+-		struct otp_info *buf, size_t len)
++static int part_get_user_prot_info(struct mtd_info *mtd, size_t len,
++				   size_t *retlen, struct otp_info *buf)
+ {
+ 	struct mtd_part *part = PART(mtd);
+-	return part->master->_get_user_prot_info(part->master, buf, len);
++	return part->master->_get_user_prot_info(part->master, len, retlen,
++						 buf);
+ }
+ 
+ static int part_read_fact_prot_reg(struct mtd_info *mtd, loff_t from,
+@@ -193,11 +194,12 @@ static int part_read_fact_prot_reg(struct mtd_info *mtd, loff_t from,
+ 						 retlen, buf);
+ }
+ 
+-static int part_get_fact_prot_info(struct mtd_info *mtd, struct otp_info *buf,
+-		size_t len)
++static int part_get_fact_prot_info(struct mtd_info *mtd, size_t len,
++				   size_t *retlen, struct otp_info *buf)
+ {
+ 	struct mtd_part *part = PART(mtd);
+-	return part->master->_get_fact_prot_info(part->master, buf, len);
++	return part->master->_get_fact_prot_info(part->master, len, retlen,
++						 buf);
+ }
+ 
+ static int part_write(struct mtd_info *mtd, loff_t to, size_t len,
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index ae61cca440..085b1541cd 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -744,7 +744,7 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
+ 	/* Serially input address */
+ 	if (column != -1) {
+ 		/* Adjust columns for 16 bit buswidth */
+-		if ((chip->options & NAND_BUSWIDTH_16) &&
++		if (chip->options & NAND_BUSWIDTH_16 &&
+ 				!nand_opcode_8bits(command))
+ 			column >>= 1;
+ 		chip->cmd_ctrl(mtd, column, ctrl);
+@@ -837,7 +837,7 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
+ 		/* Serially input address */
+ 		if (column != -1) {
+ 			/* Adjust columns for 16 bit buswidth */
+-			if ((chip->options & NAND_BUSWIDTH_16) &&
++			if (chip->options & NAND_BUSWIDTH_16 &&
+ 					!nand_opcode_8bits(command))
+ 				column >>= 1;
+ 			chip->cmd_ctrl(mtd, column, ctrl);
+@@ -1346,9 +1346,11 @@ static int nand_read_page_swecc(struct mtd_info *mtd, struct nand_chip *chip,
+  * @data_offs: offset of requested data within the page
+  * @readlen: data length
+  * @bufpoi: buffer to store read data
++ * @page: page number to read
+  */
+ static int nand_read_subpage(struct mtd_info *mtd, struct nand_chip *chip,
+-			uint32_t data_offs, uint32_t readlen, uint8_t *bufpoi)
++			uint32_t data_offs, uint32_t readlen, uint8_t *bufpoi,
++			int page)
+ {
+ 	int start_step, end_step, num_steps;
+ 	uint32_t *eccpos = chip->ecc.layout->eccpos;
+@@ -1356,13 +1358,14 @@ static int nand_read_subpage(struct mtd_info *mtd, struct nand_chip *chip,
+ 	int data_col_addr, i, gaps = 0;
+ 	int datafrag_len, eccfrag_len, aligned_len, aligned_pos;
+ 	int busw = (chip->options & NAND_BUSWIDTH_16) ? 2 : 1;
+-	int index = 0;
++	int index;
+ 	unsigned int max_bitflips = 0;
+ 
+ 	/* Column address within the page aligned to ECC size (256bytes) */
+ 	start_step = data_offs / chip->ecc.size;
+ 	end_step = (data_offs + readlen - 1) / chip->ecc.size;
+ 	num_steps = end_step - start_step + 1;
++	index = start_step * chip->ecc.bytes;
+ 
+ 	/* Data size aligned to ECC ecc.size */
+ 	datafrag_len = num_steps * chip->ecc.size;
+@@ -1399,8 +1402,6 @@ static int nand_read_subpage(struct mtd_info *mtd, struct nand_chip *chip,
+ 		 * Send the command to read the particular ECC bytes take care
+ 		 * about buswidth alignment in read_buf.
+ 		 */
+-		index = start_step * chip->ecc.bytes;
+-
+ 		aligned_pos = eccpos[index] & ~(busw - 1);
+ 		aligned_len = eccfrag_len;
+ 		if (eccpos[index] & (busw - 1))
+@@ -1725,7 +1726,8 @@ read_retry:
+ 			else if (!aligned && NAND_HAS_SUBPAGE_READ(chip) &&
+ 				 !oob)
+ 				ret = chip->ecc.read_subpage(mtd, chip,
+-							col, bytes, bufpoi);
++							col, bytes, bufpoi,
++							page);
+ 			else
+ 				ret = chip->ecc.read_page(mtd, chip, bufpoi,
+ 							  oob_required, page);
+@@ -2189,7 +2191,7 @@ static int nand_write_page_raw_syndrome(struct mtd_info *mtd,
+ 			oob += chip->ecc.prepad;
+ 		}
+ 
+-		chip->read_buf(mtd, oob, eccbytes);
++		chip->write_buf(mtd, oob, eccbytes);
+ 		oob += eccbytes;
+ 
+ 		if (chip->ecc.postpad) {
+@@ -3154,7 +3156,6 @@ static void nand_set_defaults(struct nand_chip *chip, int busw)
+ 
+ }
+ 
+-#ifdef CONFIG_SYS_NAND_ONFI_DETECTION
+ /* Sanitize ONFI strings so we can safely print them */
+ #ifndef __UBOOT__
+ static void sanitize_string(uint8_t *s, size_t len)
+@@ -3189,6 +3190,7 @@ static u16 onfi_crc16(u16 crc, u8 const *p, size_t len)
+ 	return crc;
+ }
+ 
++#ifdef CONFIG_SYS_NAND_ONFI_DETECTION
+ /* Parse the Extended Parameter Page. */
+ static int nand_flash_detect_ext_param_page(struct mtd_info *mtd,
+ 		struct nand_chip *chip, struct nand_onfi_params *p)
+@@ -3304,15 +3306,6 @@ static int nand_flash_detect_onfi(struct mtd_info *mtd, struct nand_chip *chip,
+ 		chip->read_byte(mtd) != 'F' || chip->read_byte(mtd) != 'I')
+ 		return 0;
+ 
+-	/*
+-	 * ONFI must be probed in 8-bit mode or with NAND_BUSWIDTH_AUTO, not
+-	 * with NAND_BUSWIDTH_16
+-	 */
+-	if (chip->options & NAND_BUSWIDTH_16) {
+-		pr_err("ONFI cannot be probed in 16-bit mode; aborting\n");
+-		return 0;
+-	}
+-
+ 	chip->cmdfunc(mtd, NAND_CMD_PARAM, 0, -1);
+ 	for (i = 0; i < 3; i++) {
+ 		for (j = 0; j < sizeof(*p); j++)
+@@ -3409,6 +3402,87 @@ static int nand_flash_detect_onfi(struct mtd_info *mtd, struct nand_chip *chip,
+ #endif
+ 
+ /*
++ * Check if the NAND chip is JEDEC compliant, returns 1 if it is, 0 otherwise.
++ */
++static int nand_flash_detect_jedec(struct mtd_info *mtd, struct nand_chip *chip,
++					int *busw)
++{
++	struct nand_jedec_params *p = &chip->jedec_params;
++	struct jedec_ecc_info *ecc;
++	int val;
++	int i, j;
++
++	/* Try JEDEC for unknown chip or LP */
++	chip->cmdfunc(mtd, NAND_CMD_READID, 0x40, -1);
++	if (chip->read_byte(mtd) != 'J' || chip->read_byte(mtd) != 'E' ||
++		chip->read_byte(mtd) != 'D' || chip->read_byte(mtd) != 'E' ||
++		chip->read_byte(mtd) != 'C')
++		return 0;
++
++	chip->cmdfunc(mtd, NAND_CMD_PARAM, 0x40, -1);
++	for (i = 0; i < 3; i++) {
++		for (j = 0; j < sizeof(*p); j++)
++			((uint8_t *)p)[j] = chip->read_byte(mtd);
++
++		if (onfi_crc16(ONFI_CRC_BASE, (uint8_t *)p, 510) ==
++				le16_to_cpu(p->crc))
++			break;
++	}
++
++	if (i == 3) {
++		pr_err("Could not find valid JEDEC parameter page; aborting\n");
++		return 0;
++	}
++
++	/* Check version */
++	val = le16_to_cpu(p->revision);
++	if (val & (1 << 2))
++		chip->jedec_version = 10;
++	else if (val & (1 << 1))
++		chip->jedec_version = 1; /* vendor specific version */
++
++	if (!chip->jedec_version) {
++		pr_info("unsupported JEDEC version: %d\n", val);
++		return 0;
++	}
++
++	sanitize_string(p->manufacturer, sizeof(p->manufacturer));
++	sanitize_string(p->model, sizeof(p->model));
++	if (!mtd->name)
++		mtd->name = p->model;
++
++	mtd->writesize = le32_to_cpu(p->byte_per_page);
++
++	/* Please reference to the comment for nand_flash_detect_onfi. */
++	mtd->erasesize = 1 << (fls(le32_to_cpu(p->pages_per_block)) - 1);
++	mtd->erasesize *= mtd->writesize;
++
++	mtd->oobsize = le16_to_cpu(p->spare_bytes_per_page);
++
++	/* Please reference to the comment for nand_flash_detect_onfi. */
++	chip->chipsize = 1 << (fls(le32_to_cpu(p->blocks_per_lun)) - 1);
++	chip->chipsize *= (uint64_t)mtd->erasesize * p->lun_count;
++	chip->bits_per_cell = p->bits_per_cell;
++
++	if (jedec_feature(chip) & JEDEC_FEATURE_16_BIT_BUS)
++		*busw = NAND_BUSWIDTH_16;
++	else
++		*busw = 0;
++
++	/* ECC info */
++	ecc = &p->ecc_info[0];
++
++	if (ecc->codeword_size >= 9) {
++		chip->ecc_strength_ds = ecc->ecc_bits;
++		chip->ecc_step_ds = 1 << ecc->codeword_size;
++	} else {
++		pr_warn("Invalid codeword size\n");
++	}
++
++	return 1;
++}
++
++/*
+  * nand_id_has_period - Check if an ID string has a given wraparound period
+  * @id_data: the ID string
+  * @arrlen: the length of the @id_data array
+@@ -3718,10 +3792,10 @@ static bool find_full_id_nand(struct mtd_info *mtd, struct nand_chip *chip,
+  */
+ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 						  struct nand_chip *chip,
+-						  int busw,
+ 						  int *maf_id, int *dev_id,
+ 						  struct nand_flash_dev *type)
+ {
++	int busw;
+ 	int i, maf_idx;
+ 	u8 id_data[8];
+ 
+@@ -3777,6 +3851,10 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 		/* Check is chip is ONFI compliant */
+ 		if (nand_flash_detect_onfi(mtd, chip, &busw))
+ 			goto ident_done;
++
++		/* Check if the chip is JEDEC compliant */
++		if (nand_flash_detect_jedec(mtd, chip, &busw))
++			goto ident_done;
+ 	}
+ 
+ 	if (!type->name)
+@@ -3856,12 +3934,29 @@ ident_done:
+ 
+ 	pr_info("device found, Manufacturer ID: 0x%02x, Chip ID: 0x%02x\n",
+ 		*maf_id, *dev_id);
++
+ #ifdef CONFIG_SYS_NAND_ONFI_DETECTION
+-	pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
+-		chip->onfi_version ? chip->onfi_params.model : type->name);
++	if (chip->onfi_version)
++		pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++				chip->onfi_params.model);
++	else if (chip->jedec_version)
++		pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++				chip->jedec_params.model);
++	else
++		pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++				type->name);
+ #else
+-	pr_info("%s %s\n", nand_manuf_ids[maf_idx].name, type->name);
++	if (chip->jedec_version)
++		pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++				chip->jedec_params.model);
++	else
++		pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++				type->name);
++
++	pr_info("%s %s\n", nand_manuf_ids[maf_idx].name,
++		type->name);
+ #endif
++
+ 	pr_info("%dMiB, %s, page size: %d, OOB size: %d\n",
+ 		(int)(chip->chipsize >> 20), nand_is_slc(chip) ? "SLC" : "MLC",
+ 		mtd->writesize, mtd->oobsize);
+@@ -3882,18 +3977,16 @@ ident_done:
+ int nand_scan_ident(struct mtd_info *mtd, int maxchips,
+ 		    struct nand_flash_dev *table)
+ {
+-	int i, busw, nand_maf_id, nand_dev_id;
++	int i, nand_maf_id, nand_dev_id;
+ 	struct nand_chip *chip = mtd->priv;
+ 	struct nand_flash_dev *type;
+ 
+-	/* Get buswidth to select the correct functions */
+-	busw = chip->options & NAND_BUSWIDTH_16;
+ 	/* Set the default functions */
+-	nand_set_defaults(chip, busw);
++	nand_set_defaults(chip, chip->options & NAND_BUSWIDTH_16);
+ 
+ 	/* Read the flash type */
+-	type = nand_get_flash_type(mtd, chip, busw,
+-				&nand_maf_id, &nand_dev_id, table);
++	type = nand_get_flash_type(mtd, chip, &nand_maf_id,
++				   &nand_dev_id, table);
+ 
+ 	if (IS_ERR(type)) {
+ 		if (!(chip->options & NAND_SCAN_SILENT_NODEV))
+@@ -3947,15 +4040,30 @@ int nand_scan_tail(struct mtd_info *mtd)
+ 	int i;
+ 	struct nand_chip *chip = mtd->priv;
+ 	struct nand_ecc_ctrl *ecc = &chip->ecc;
++	struct nand_buffers *nbuf;
+ 
+ 	/* New bad blocks should be marked in OOB, flash-based BBT, or both */
+ 	BUG_ON((chip->bbt_options & NAND_BBT_NO_OOB_BBM) &&
+ 			!(chip->bbt_options & NAND_BBT_USE_FLASH));
+ 
+-	if (!(chip->options & NAND_OWN_BUFFERS))
+-		chip->buffers = kmalloc(sizeof(*chip->buffers), GFP_KERNEL);
+-	if (!chip->buffers)
+-		return -ENOMEM;
++	if (!(chip->options & NAND_OWN_BUFFERS)) {
++#ifndef __UBOOT__
++		nbuf = kzalloc(sizeof(*nbuf) + mtd->writesize
++				+ mtd->oobsize * 3, GFP_KERNEL);
++		if (!nbuf)
++			return -ENOMEM;
++		nbuf->ecccalc = (uint8_t *)(nbuf + 1);
++		nbuf->ecccode = nbuf->ecccalc + mtd->oobsize;
++		nbuf->databuf = nbuf->ecccode + mtd->oobsize;
++#else
++		nbuf = kzalloc(sizeof(struct nand_buffers), GFP_KERNEL);
++#endif
++
++		chip->buffers = nbuf;
++	} else {
++		if (!chip->buffers)
++			return -ENOMEM;
++	}
+ 
+ 	/* Set the internal oob buffer location, just after the page data */
+ 	chip->oob_poi = chip->buffers->databuf + mtd->writesize;
+@@ -4076,7 +4184,7 @@ int nand_scan_tail(struct mtd_info *mtd)
+ 
+ 	case NAND_ECC_SOFT_BCH:
+ 		if (!mtd_nand_has_bch()) {
+-			pr_warn("CONFIG_MTD_ECC_BCH not enabled\n");
++			pr_warn("CONFIG_MTD_NAND_ECC_BCH not enabled\n");
+ 			BUG();
+ 		}
+ 		ecc->calculate = nand_bch_calculate_ecc;
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index 2da8d08ad4..54f9f13896 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -59,6 +59,9 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	{"TC58NVG6D2 64G 3.3V 8-bit",
+ 		{ .id = {0x98, 0xde, 0x94, 0x82, 0x76, 0x56, 0x04, 0x20} },
+ 		  SZ_8K, SZ_8K, SZ_2M, 0, 8, 640, NAND_ECC_INFO(40, SZ_1K) },
++	{"SDTNRGAMA 64G 3.3V 8-bit",
++		{ .id = {0x45, 0xde, 0x94, 0x93, 0x76, 0x50} },
++		  SZ_16K, SZ_8K, SZ_4M, 0, 6, 1280, NAND_ECC_INFO(40, SZ_1K) },
+ 
+ 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
+ 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
+diff --git a/drivers/mtd/ubi/build.c b/drivers/mtd/ubi/build.c
+index 7094b9c0e8..ff8bf0cedf 100644
+--- a/drivers/mtd/ubi/build.c
++++ b/drivers/mtd/ubi/build.c
+@@ -1331,6 +1331,15 @@ int ubi_init(void)
+ 		}
+ 	}
+ 
++	err = ubiblock_init();
++	if (err) {
++		ubi_err("block: cannot initialize, error %d", err);
++
++		/* See comment above re-ubi_is_module(). */
++		if (ubi_is_module())
++			goto out_detach;
++	}
++
+ 	return 0;
+ 
+ out_detach:
+@@ -1363,6 +1372,8 @@ void ubi_exit(void)
+ {
+ 	int i;
+ 
++	ubiblock_exit();
++
+ 	for (i = 0; i < UBI_MAX_DEVICES; i++)
+ 		if (ubi_devices[i]) {
+ 			mutex_lock(&ubi_devices_mutex);
+diff --git a/drivers/mtd/ubi/ubi.h b/drivers/mtd/ubi/ubi.h
+index 1c39573071..20fd704eca 100644
+--- a/drivers/mtd/ubi/ubi.h
++++ b/drivers/mtd/ubi/ubi.h
+@@ -12,7 +12,6 @@
+ 
+ #define __UBOOT__
+ #ifndef __UBOOT__
+-#include <linux/init.h>
+ #include <linux/types.h>
+ #include <linux/list.h>
+ #include <linux/rbtree.h>
+@@ -884,6 +883,26 @@ int ubi_update_fastmap(struct ubi_device *ubi);
+ int ubi_scan_fastmap(struct ubi_device *ubi, struct ubi_attach_info *ai,
+ 		     int fm_anchor);
+ 
++/* block.c */
++#ifdef CONFIG_MTD_UBI_BLOCK
++int ubiblock_init(void);
++void ubiblock_exit(void);
++int ubiblock_create(struct ubi_volume_info *vi);
++int ubiblock_remove(struct ubi_volume_info *vi);
++#else
++static inline int ubiblock_init(void) { return 0; }
++static inline void ubiblock_exit(void) {}
++static inline int ubiblock_create(struct ubi_volume_info *vi)
++{
++	return -ENOSYS;
++}
++static inline int ubiblock_remove(struct ubi_volume_info *vi)
++{
++	return -ENOSYS;
++}
++#endif
++
++
+ /*
+  * ubi_rb_for_each_entry - walk an RB-tree.
+  * @rb: a pointer to type 'struct rb_node' to use as a loop counter
+diff --git a/drivers/mtd/ubi/wl.c b/drivers/mtd/ubi/wl.c
+index 2987ffc093..102309016a 100644
+--- a/drivers/mtd/ubi/wl.c
++++ b/drivers/mtd/ubi/wl.c
+@@ -672,6 +672,8 @@ static struct ubi_wl_entry *get_peb_for_wl(struct ubi_device *ubi)
+ 
+ 	e = find_wl_entry(ubi, &ubi->free, WL_FREE_MAX_DIFF);
+ 	self_check_in_wl_tree(ubi, e, &ubi->free);
++	ubi->free_count--;
++	ubi_assert(ubi->free_count >= 0);
+ 	rb_erase(&e->u.rb, &ubi->free);
+ 
+ 	return e;
+@@ -685,6 +687,9 @@ int ubi_wl_get_peb(struct ubi_device *ubi)
+ 	peb = __wl_get_peb(ubi);
+ 	spin_unlock(&ubi->wl_lock);
+ 
++	if (peb < 0)
++		return peb;
++
+ 	err = ubi_self_check_all_ff(ubi, peb, ubi->vid_hdr_aloffset,
+ 				    ubi->peb_size - ubi->vid_hdr_aloffset);
+ 	if (err) {
+@@ -1077,6 +1082,7 @@ static int wear_leveling_worker(struct ubi_device *ubi, struct ubi_work *wrk,
+ 
+ 			/* Give the unused PEB back */
+ 			wl_tree_add(e2, &ubi->free);
++			ubi->free_count++;
+ 			goto out_cancel;
+ 		}
+ 		self_check_in_wl_tree(ubi, e1, &ubi->used);
+diff --git a/fs/ubifs/super.c b/fs/ubifs/super.c
+index 9c87db40d3..85142c7bb6 100644
+--- a/fs/ubifs/super.c
++++ b/fs/ubifs/super.c
+@@ -531,7 +531,7 @@ static void ubifs_evict_inode(struct inode *inode)
+ 	dbg_gen("inode %lu, mode %#x", inode->i_ino, (int)inode->i_mode);
+ 	ubifs_assert(!atomic_read(&inode->i_count));
+ 
+-	truncate_inode_pages(&inode->i_data, 0);
++	truncate_inode_pages_final(&inode->i_data);
+ 
+ 	if (inode->i_nlink)
+ 		goto done;
+@@ -1786,7 +1786,7 @@ static int ubifs_remount_rw(struct ubifs_info *c)
+ 	if (c->space_fixup) {
+ 		err = ubifs_fixup_free_space(c);
+ 		if (err)
+-			return err;
++			goto out;
+ 	}
+ 
+ 	err = check_free_space(c);
+@@ -2063,6 +2063,7 @@ static int ubifs_remount_fs(struct super_block *sb, int *flags, char *data)
+ 	int err;
+ 	struct ubifs_info *c = sb->s_fs_info;
+ 
++	sync_filesystem(sb);
+ 	dbg_gen("old flags %#lx, new flags %#x", sb->s_flags, *flags);
+ 
+ 	err = ubifs_parse_options(c, data, 1);
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index b7b47570ea..a74f665d2e 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -219,12 +219,12 @@ struct mtd_info {
+ 			  struct mtd_oob_ops *ops);
+ 	int (*_write_oob) (struct mtd_info *mtd, loff_t to,
+ 			   struct mtd_oob_ops *ops);
+-	int (*_get_fact_prot_info) (struct mtd_info *mtd, struct otp_info *buf,
+-				    size_t len);
++	int (*_get_fact_prot_info) (struct mtd_info *mtd, size_t len,
++				    size_t *retlen, struct otp_info *buf);
+ 	int (*_read_fact_prot_reg) (struct mtd_info *mtd, loff_t from,
+ 				    size_t len, size_t *retlen, u_char *buf);
+-	int (*_get_user_prot_info) (struct mtd_info *mtd, struct otp_info *buf,
+-				    size_t len);
++	int (*_get_user_prot_info) (struct mtd_info *mtd, size_t len,
++				    size_t *retlen, struct otp_info *buf);
+ 	int (*_read_user_prot_reg) (struct mtd_info *mtd, loff_t from,
+ 				    size_t len, size_t *retlen, u_char *buf);
+ 	int (*_write_user_prot_reg) (struct mtd_info *mtd, loff_t to,
+@@ -303,12 +303,12 @@ static inline int mtd_write_oob(struct mtd_info *mtd, loff_t to,
+ 	return mtd->_write_oob(mtd, to, ops);
+ }
+ 
+-int mtd_get_fact_prot_info(struct mtd_info *mtd, struct otp_info *buf,
+-			   size_t len);
++int mtd_get_fact_prot_info(struct mtd_info *mtd, size_t len, size_t *retlen,
++			   struct otp_info *buf);
+ int mtd_read_fact_prot_reg(struct mtd_info *mtd, loff_t from, size_t len,
+ 			   size_t *retlen, u_char *buf);
+-int mtd_get_user_prot_info(struct mtd_info *mtd, struct otp_info *buf,
+-			   size_t len);
++int mtd_get_user_prot_info(struct mtd_info *mtd, size_t len, size_t *retlen,
++			   struct otp_info *buf);
+ int mtd_read_user_prot_reg(struct mtd_info *mtd, loff_t from, size_t len,
+ 			   size_t *retlen, u_char *buf);
+ int mtd_write_user_prot_reg(struct mtd_info *mtd, loff_t to, size_t len,
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index 489c703b9b..67d2651481 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -59,15 +59,15 @@ extern int nand_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len);
+ 
+ /* The maximum number of NAND chips in an array */
+ #define NAND_MAX_CHIPS		8
+-#endif
+-
++#else
+ /*
+  * This constant declares the max. oobsize / page, which
+  * is supported now. If you add a chip with bigger oobsize/page
+  * adjust this accordingly.
+  */
+-#define NAND_MAX_OOBSIZE	744
+-#define NAND_MAX_PAGESIZE	8192
++#define NAND_MAX_OOBSIZE       744
++#define NAND_MAX_PAGESIZE      8192
++#endif
+ 
+ /*
+  * Constants for hardware specific CLE/ALE/NCE function
+@@ -385,6 +385,84 @@ struct nand_onfi_vendor_micron {
+ 	u8 param_revision;
+ } __packed;
+ 
++struct jedec_ecc_info {
++	u8 ecc_bits;
++	u8 codeword_size;
++	__le16 bb_per_lun;
++	__le16 block_endurance;
++	u8 reserved[2];
++} __packed;
++
++/* JEDEC features */
++#define JEDEC_FEATURE_16_BIT_BUS	(1 << 0)
++
++struct nand_jedec_params {
++	/* rev info and features block */
++	/* 'J' 'E' 'S' 'D'  */
++	u8 sig[4];
++	__le16 revision;
++	__le16 features;
++	u8 opt_cmd[3];
++	__le16 sec_cmd;
++	u8 num_of_param_pages;
++	u8 reserved0[18];
++
++	/* manufacturer information block */
++	char manufacturer[12];
++	char model[20];
++	u8 jedec_id[6];
++	u8 reserved1[10];
++
++	/* memory organization block */
++	__le32 byte_per_page;
++	__le16 spare_bytes_per_page;
++	u8 reserved2[6];
++	__le32 pages_per_block;
++	__le32 blocks_per_lun;
++	u8 lun_count;
++	u8 addr_cycles;
++	u8 bits_per_cell;
++	u8 programs_per_page;
++	u8 multi_plane_addr;
++	u8 multi_plane_op_attr;
++	u8 reserved3[38];
++
++	/* electrical parameter block */
++	__le16 async_sdr_speed_grade;
++	__le16 toggle_ddr_speed_grade;
++	__le16 sync_ddr_speed_grade;
++	u8 async_sdr_features;
++	u8 toggle_ddr_features;
++	u8 sync_ddr_features;
++	__le16 t_prog;
++	__le16 t_bers;
++	__le16 t_r;
++	__le16 t_r_multi_plane;
++	__le16 t_ccs;
++	__le16 io_pin_capacitance_typ;
++	__le16 input_pin_capacitance_typ;
++	__le16 clk_pin_capacitance_typ;
++	u8 driver_strength_support;
++	__le16 t_ald;
++	u8 reserved4[36];
++
++	/* ECC and endurance block */
++	u8 guaranteed_good_blocks;
++	__le16 guaranteed_block_endurance;
++	struct jedec_ecc_info ecc_info[4];
++	u8 reserved5[29];
++
++	/* reserved */
++	u8 reserved6[148];
++
++	/* vendor */
++	__le16 vendor_rev_num;
++	u8 reserved7[88];
++
++	/* CRC for Parameter Page */
++	__le16 crc;
++} __packed;
++
+ /**
+  * struct nand_hw_control - Control structure for hardware controller (e.g ECC generator) shared among independent devices
+  * @lock:               protection lock
+@@ -455,7 +533,7 @@ struct nand_ecc_ctrl {
+ 	int (*read_page)(struct mtd_info *mtd, struct nand_chip *chip,
+ 			uint8_t *buf, int oob_required, int page);
+ 	int (*read_subpage)(struct mtd_info *mtd, struct nand_chip *chip,
+-			uint32_t offs, uint32_t len, uint8_t *buf);
++			uint32_t offs, uint32_t len, uint8_t *buf, int page);
+ 	int (*write_subpage)(struct mtd_info *mtd, struct nand_chip *chip,
+ 			uint32_t offset, uint32_t data_len,
+ 			const uint8_t *data_buf, int oob_required);
+@@ -472,17 +550,17 @@ struct nand_ecc_ctrl {
+ 
+ /**
+  * struct nand_buffers - buffer structure for read/write
+- * @ecccalc:	buffer for calculated ECC
+- * @ecccode:	buffer for ECC read from flash
+- * @databuf:	buffer for data - dynamically sized
++ * @ecccalc:	buffer pointer for calculated ECC, size is oobsize.
++ * @ecccode:	buffer pointer for ECC read from flash, size is oobsize.
++ * @databuf:	buffer pointer for data, size is (page size + oobsize).
+  *
+  * Do not change the order of buffers. databuf and oobrbuf must be in
+  * consecutive order.
+  */
+ struct nand_buffers {
+ #ifndef __UBOOT__
+-	uint8_t	*ecccalc;
+-	uint8_t	*ecccode;
++	uint8_t *ecccalc;
++	uint8_t *ecccode;
+ 	uint8_t *databuf;
+ #else
+ 	uint8_t	ecccalc[ALIGN(NAND_MAX_OOBSIZE, ARCH_DMA_MINALIGN)];
+@@ -567,8 +645,12 @@ struct nand_buffers {
+  * @subpagesize:	[INTERN] holds the subpagesize
+  * @onfi_version:	[INTERN] holds the chip ONFI version (BCD encoded),
+  *			non 0 if ONFI supported.
++ * @jedec_version:	[INTERN] holds the chip JEDEC version (BCD encoded),
++ *			non 0 if JEDEC supported.
+  * @onfi_params:	[INTERN] holds the ONFI page parameter when ONFI is
+  *			supported, 0 otherwise.
++ * @jedec_params:	[INTERN] holds the JEDEC parameter page when JEDEC is
++ *			supported, 0 otherwise.
+  * @read_retries:	[INTERN] the number of read retry modes supported
+  * @onfi_set_features:	[REPLACEABLE] set the features for ONFI nand
+  * @onfi_get_features:	[REPLACEABLE] get the features for ONFI nand
+@@ -646,10 +728,12 @@ struct nand_chip {
+ 	int badblockbits;
+ 
+ 	int onfi_version;
++	int jedec_version;
+ #ifdef CONFIG_SYS_NAND_ONFI_DETECTION
+ 	struct nand_onfi_params	onfi_params;
+ #endif
+-
++	struct nand_jedec_params jedec_params;
++ 
+ 	int read_retries;
+ 
+ 	flstate_t state;
+@@ -923,6 +1007,13 @@ static inline int nand_opcode_8bits(unsigned int command)
+ 	return 0;
+ }
+ 
++/* return the supported JEDEC features. */
++static inline int jedec_feature(struct nand_chip *chip)
++{
++	return chip->jedec_version ? le16_to_cpu(chip->jedec_params.features)
++		: 0;
++}
++
+ #ifdef __UBOOT__
+ /* Standard NAND functions from nand_base.c */
+ void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len);
+diff --git a/include/mtd/ubi-user.h b/include/mtd/ubi-user.h
+index c93914ad25..22d90040f8 100644
+--- a/include/mtd/ubi-user.h
++++ b/include/mtd/ubi-user.h
+@@ -122,6 +122,16 @@
+  * used. A pointer to a &struct ubi_set_vol_prop_req object is expected to be
+  * passed. The object describes which property should be set, and to which value
+  * it should be set.
++ *
++ * Block devices on UBI volumes
++ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ *
++ * To create a R/O block device on top of an UBI volume the %UBI_IOCVOLCRBLK
++ * should be used. A pointer to a &struct ubi_blkcreate_req object is expected
++ * to be passed, which is not used and reserved for future usage.
++ *
++ * Conversely, to remove a block device the %UBI_IOCVOLRMBLK should be used,
++ * which takes no arguments.
+  */
+ 
+ /*
+@@ -179,6 +189,10 @@
+ /* Set an UBI volume property */
+ #define UBI_IOCSETVOLPROP _IOW(UBI_VOL_IOC_MAGIC, 6, \
+ 			       struct ubi_set_vol_prop_req)
++/* Create a R/O block device on top of an UBI volume */
++#define UBI_IOCVOLCRBLK _IOW(UBI_VOL_IOC_MAGIC, 7, struct ubi_blkcreate_req)
++/* Remove the R/O block device */
++#define UBI_IOCVOLRMBLK _IO(UBI_VOL_IOC_MAGIC, 8)
+ 
+ /* Maximum MTD device name length supported by UBI */
+ #define MAX_UBI_MTD_NAME_LEN 127
+@@ -408,4 +422,12 @@ struct ubi_set_vol_prop_req {
+ 	__u64 value;
+ }  __packed;
+ 
++/**
++ * struct ubi_blkcreate_req - a data structure used in block creation requests.
++ * @padding: reserved for future, not used, has to be zeroed
++ */
++struct ubi_blkcreate_req {
++	__s8  padding[128];
++}  __packed;
++
+ #endif /* __UBI_USER_H__ */
+-- 
+2.11.0
+

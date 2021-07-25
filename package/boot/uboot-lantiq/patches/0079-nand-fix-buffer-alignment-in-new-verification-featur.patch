@@ -1,0 +1,55 @@
+From ce2c9f4f924d6c56cd2ab99a9506eb3f20770480 Mon Sep 17 00:00:00 2001
+From: Stephen Warren <swarren@nvidia.com>
+Date: Tue, 14 Apr 2015 08:59:00 -0600
+Subject: [PATCH 079/158] nand: fix buffer alignment in new verification
+ feature
+
+On systems with caches enabled, NAND I/O may need to flush/invalidate
+the cache during read/write operations. For this to work correctly, all
+buffers must be cache-aligned. Fix nand_verify*() to allocate aligned
+buffers.
+
+This prevents cache alignment warnings from being spewed when using
+U-Boot to write an updated version of itself to flash on NVIDIA Tegra
+Seaboard (after perturbation of stack/data layout in current
+u-boot-dm/next branch).
+
+I have validatd (executed) nand_verify(), but I don't think I've executed
+nand_verify_page_oob(); testing of that would be useful.
+
+Cc: Peter Tyser <ptyser@xes-inc.com>
+Cc: Heiko Schocher <hs@denx.de>
+Cc: Scott Wood <scottwood@freescale.com>
+Fixes: 59b5a2ad83df ("nand: Add verification functions")
+Signed-off-by: Stephen Warren <swarren@nvidia.com>
+Reviewed-by: Simon Glass <sjg@chromium.org>
+Acked-by: Scott Wood <scottwood@freescale.com>
+---
+ drivers/mtd/nand/nand_util.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index 12dd26a33f..ee2c24df3b 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -483,7 +483,7 @@ int nand_verify_page_oob(nand_info_t *nand, struct mtd_oob_ops *ops, loff_t ofs)
+ 
+ 	memcpy(&vops, ops, sizeof(vops));
+ 
+-	vops.datbuf = malloc(verlen);
++	vops.datbuf = memalign(ARCH_DMA_MINALIGN, verlen);
+ 
+ 	if (!vops.datbuf)
+ 		return -ENOMEM;
+@@ -520,7 +520,7 @@ int nand_verify(nand_info_t *nand, loff_t ofs, size_t len, u_char *buf)
+ 	int rval = 0;
+ 	size_t verofs;
+ 	size_t verlen = nand->writesize;
+-	uint8_t *verbuf = malloc(verlen);
++	uint8_t *verbuf = memalign(ARCH_DMA_MINALIGN, verlen);
+ 
+ 	if (!verbuf)
+ 		return -ENOMEM;
+-- 
+2.11.0
+

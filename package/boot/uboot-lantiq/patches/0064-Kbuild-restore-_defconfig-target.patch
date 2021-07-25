@@ -1,0 +1,27 @@
+From 831482678c26cc3bf97c288dd3f8d650f395ccfc Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Mon, 2 Jan 2017 22:22:23 +0100
+Subject: [PATCH 064/158] Kbuild: restore *_defconfig target
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ Makefile | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index 32db5d1fad..e427fee884 100644
+--- a/Makefile
++++ b/Makefile
+@@ -467,6 +467,9 @@ ifeq ($(config-targets),1)
+ %_config:: outputmakefile
+ 	@$(MKCONFIG) -A $(@:_config=)
+ 
++%_defconfig:: outputmakefile
++	@$(MKCONFIG) -A $(@:_defconfig=)
++
+ else
+ # ===========================================================================
+ # Build targets only - this includes vmlinux, arch specific targets, clean
+-- 
+2.11.0
+

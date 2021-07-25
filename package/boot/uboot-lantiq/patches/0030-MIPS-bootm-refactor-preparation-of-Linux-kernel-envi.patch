@@ -1,0 +1,59 @@
+From 5c190c946a193b3dadef9fffbc965cdc34e99c71 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 14 Jan 2015 21:44:13 +0100
+Subject: [PATCH 030/158] MIPS: bootm: refactor preparation of Linux kernel
+ environment
+
+Commit ca65e5851fb60ae58b46e2ad76a90b39d9c378c3 upstream.
+
+Move preparation of Linux kernel environment in a separate
+function and mark it as legacy. Add a Kconfig option to make
+that legacy mode configurable.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index a028a47ab9..fa579b36e4 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -26,6 +26,12 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define mips_boot_cmdline_legacy	0
+ #endif
+ 
++#if defined(CONFIG_MIPS_BOOT_ENV_LEGACY)
++#define mips_boot_env_legacy	1
++#else
++#define mips_boot_env_legacy	0
++#endif
++
+ static int linux_argc;
+ static char **linux_argv;
+ static char *linux_argp;
+@@ -177,7 +183,7 @@ static void linux_env_set(const char *env_name, const char *env_val)
+ 	}
+ }
+ 
+-static void boot_prep_linux(bootm_headers_t *images)
++static void linux_env_legacy(bootm_headers_t *images)
+ {
+ 	char env_buf[12];
+ 	const char *cp;
+@@ -225,6 +231,12 @@ static void boot_prep_linux(bootm_headers_t *images)
+ 	}
+ }
+ 
++static void boot_prep_linux(bootm_headers_t *images)
++{
++	if (mips_boot_env_legacy)
++		linux_env_legacy(images);
++}
++
+ static void boot_jump_linux(bootm_headers_t *images)
+ {
+ 	typedef void __noreturn (*kernel_entry_t)(int, ulong, ulong, ulong);
+-- 
+2.11.0
+

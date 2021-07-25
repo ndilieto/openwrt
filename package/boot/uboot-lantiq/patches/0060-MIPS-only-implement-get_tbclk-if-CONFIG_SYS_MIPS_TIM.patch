@@ -1,0 +1,43 @@
+From d72e687cabf6ba0e4af0b7bd93a2dd6578389e9c Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 6 Oct 2015 14:57:51 +0200
+Subject: [PATCH 060/158] MIPS: only implement get_tbclk() if
+ CONFIG_SYS_MIPS_TIMER_FREQ is defined
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/time.c | 2 ++
+ arch/mips/cpu/mips64/time.c | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/arch/mips/cpu/mips32/time.c b/arch/mips/cpu/mips32/time.c
+index 553da5f4ba..5a1832af38 100644
+--- a/arch/mips/cpu/mips32/time.c
++++ b/arch/mips/cpu/mips32/time.c
+@@ -13,7 +13,9 @@ unsigned long notrace timer_read_counter(void)
+ 	return read_c0_count();
+ }
+ 
++#ifdef CONFIG_SYS_MIPS_TIMER_FREQ
+ ulong notrace get_tbclk(void)
+ {
+ 	return CONFIG_SYS_MIPS_TIMER_FREQ;
+ }
++#endif
+diff --git a/arch/mips/cpu/mips64/time.c b/arch/mips/cpu/mips64/time.c
+index 553da5f4ba..5a1832af38 100644
+--- a/arch/mips/cpu/mips64/time.c
++++ b/arch/mips/cpu/mips64/time.c
+@@ -13,7 +13,9 @@ unsigned long notrace timer_read_counter(void)
+ 	return read_c0_count();
+ }
+ 
++#ifdef CONFIG_SYS_MIPS_TIMER_FREQ
+ ulong notrace get_tbclk(void)
+ {
+ 	return CONFIG_SYS_MIPS_TIMER_FREQ;
+ }
++#endif
+-- 
+2.11.0
+

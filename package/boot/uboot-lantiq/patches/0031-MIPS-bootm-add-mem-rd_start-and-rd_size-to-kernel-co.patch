@@ -1,0 +1,61 @@
+From 380e7a5151095c7ea3fa0092d977a32b6e52e8ff Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 14 Jan 2015 21:44:13 +0100
+Subject: [PATCH 031/158] MIPS: bootm: add mem, rd_start and rd_size to kernel
+ command line
+
+Commit 8cec725ad502c955c2e8088ae1afb4e06ef80cef upstream.
+
+If the user wants to boot a kernel without legacy environment,
+information like memory size, initrd address and size should be
+handed over to the kernel in the command line.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index fa579b36e4..7a98f15131 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -144,10 +144,36 @@ static void linux_cmdline_legacy(bootm_headers_t *images)
+ 	}
+ }
+ 
++static void linux_cmdline_append(bootm_headers_t *images)
++{
++	char buf[24];
++	ulong mem, rd_start, rd_size;
++
++	/* append mem */
++	mem = gd->ram_size >> 20;
++	sprintf(buf, "mem=%luM", mem);
++	linux_cmdline_set(buf, strlen(buf));
++
++	/* append rd_start and rd_size */
++	rd_start = images->initrd_start;
++	rd_size = images->initrd_end - images->initrd_start;
++
++	if (rd_size) {
++		sprintf(buf, "rd_start=0x%08lX", rd_start);
++		linux_cmdline_set(buf, strlen(buf));
++		sprintf(buf, "rd_size=0x%lX", rd_size);
++		linux_cmdline_set(buf, strlen(buf));
++	}
++}
++
+ static void boot_cmdline_linux(bootm_headers_t *images)
+ {
+ 	if (mips_boot_cmdline_legacy) {
+ 		linux_cmdline_legacy(images);
++
++		if (!mips_boot_env_legacy)
++			linux_cmdline_append(images);
++
+ 		linux_cmdline_dump();
+ 	}
+ }
+-- 
+2.11.0
+

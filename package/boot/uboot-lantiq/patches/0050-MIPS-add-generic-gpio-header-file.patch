@@ -1,0 +1,26 @@
+From 8ad4a014a72894614dfd3c0a54f08e1e23aec7dd Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:25:39 +0100
+Subject: [PATCH 050/158] MIPS: add generic gpio header file
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/include/asm/gpio.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+ create mode 100644 arch/mips/include/asm/gpio.h
+
+diff --git a/arch/mips/include/asm/gpio.h b/arch/mips/include/asm/gpio.h
+new file mode 100644
+index 0000000000..9be58b8ca4
+--- /dev/null
++++ b/arch/mips/include/asm/gpio.h
+@@ -0,0 +1,6 @@
++/*
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <asm/arch/gpio.h>
++#include <asm-generic/gpio.h>
+-- 
+2.11.0
+

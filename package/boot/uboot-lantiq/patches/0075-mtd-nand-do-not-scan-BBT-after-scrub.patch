@@ -1,0 +1,74 @@
+From a8b799d52e212ae34f7b6d8976c2f370113a6c9b Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Date: Fri, 26 Dec 2014 22:20:58 +0900
+Subject: [PATCH 075/158] mtd: nand: do not scan BBT after scrub
+
+Currently, "nand scrub" runs chip->scan_bbt at the end of
+nand_erase_opts() even if NAND_SKIP_BBTSCAN flag is set.
+
+It violates the intention of NAND_SKIP_BBTSCAN.
+
+Move NAND_SKIP_BBTSCAN flag check to nand_block_checkbad() so that
+chip->scan_bbt() is never run if NAND_SKIP_BBTSCAN is set.
+
+Also, unset NAND_BBT_SCANNED flag instead of running chip->scan_bbt()
+right after scrub.  We can be lazier here because the BBT is scanned
+at the next call of nand_block_checkbad().
+
+Signed-off-by: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Cc: Scott Wood <scottwood@freescale.com>
+---
+ drivers/mtd/nand/nand_base.c | 7 ++-----
+ drivers/mtd/nand/nand_util.c | 4 +---
+ 2 files changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 3242f1b403..21c3b1be0d 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -637,7 +637,8 @@ static int nand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip,
+ {
+ 	struct nand_chip *chip = mtd->priv;
+ 
+-	if (!(chip->options & NAND_BBT_SCANNED)) {
++	if (!(chip->options & NAND_SKIP_BBTSCAN) &&
++	    !(chip->options & NAND_BBT_SCANNED)) {
+ 		chip->options |= NAND_BBT_SCANNED;
+ 		chip->scan_bbt(mtd);
+ 	}
+@@ -4328,10 +4329,6 @@ int nand_scan_tail(struct mtd_info *mtd)
+ 	if (!mtd->bitflip_threshold)
+ 		mtd->bitflip_threshold = mtd->ecc_strength;
+ 
+-	/* Check, if we should skip the bad block table scan */
+-	if (chip->options & NAND_SKIP_BBTSCAN)
+-		chip->options |= NAND_BBT_SCANNED;
+-
+ 	return 0;
+ }
+ EXPORT_SYMBOL(nand_scan_tail);
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index 024f6fb440..afdd160d81 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -91,6 +91,7 @@ int nand_erase_opts(nand_info_t *meminfo, const nand_erase_options_t *opts)
+ 			kfree(chip->bbt);
+ 		}
+ 		chip->bbt = NULL;
++		chip->options &= ~NAND_BBT_SCANNED;
+ 	}
+ 
+ 	for (erased_length = 0;
+@@ -179,9 +180,6 @@ int nand_erase_opts(nand_info_t *meminfo, const nand_erase_options_t *opts)
+ 	if (!opts->quiet)
+ 		printf("\n");
+ 
+-	if (opts->scrub)
+-		chip->scan_bbt(meminfo);
+-
+ 	return 0;
+ }
+ 
+-- 
+2.11.0
+

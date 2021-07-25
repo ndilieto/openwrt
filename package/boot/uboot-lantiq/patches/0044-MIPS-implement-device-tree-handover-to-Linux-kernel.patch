@@ -1,0 +1,39 @@
+From 7e8a027320fafcbe84fec1860f15f62d8e6b3bdd Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Sun, 22 Feb 2015 16:58:30 +0100
+Subject: [PATCH 044/158] MIPS: implement device-tree handover to Linux kernel
+
+Commit 90b1c9fad7bde21e3f0d388d0ba0ac5ee1f2e976 upstream.
+
+Add device-tree handover to Linux kernel conforming with MIPS UHI [1].
+Register $a0 will be set to the reserved value -2. The address of
+the device-tree blob will be stored as KSEG0 address in $a1. $a2 and
+$a3 are set to zero.
+
+[1] http://prplfoundation.org/wiki/MIPS_documentation
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index d9d8396e63..e289799c1e 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -317,7 +317,11 @@ static void boot_jump_linux(bootm_headers_t *images)
+ 	bootstage_report();
+ #endif
+ 
+-	kernel(linux_argc, (ulong)linux_argv, (ulong)linux_env, linux_extra);
++	if (images->ft_len)
++		kernel(-2, (ulong)images->ft_addr, 0, 0);
++	else
++		kernel(linux_argc, (ulong)linux_argv, (ulong)linux_env,
++			linux_extra);
+ }
+ 
+ int do_bootm_linux(int flag, int argc, char * const argv[],
+-- 
+2.11.0
+

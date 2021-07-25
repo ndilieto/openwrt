@@ -1,0 +1,39 @@
+From 616ce917cd3f22f97c458ca3789ba4af06780ca3 Mon Sep 17 00:00:00 2001
+From: Govindraj Raja <Govindraj.Raja@imgtec.com>
+Date: Wed, 19 Aug 2015 19:19:15 +0100
+Subject: [PATCH 048/158] MIPS: fix syntax for fdt_chosen/initrd.
+
+Commit 4adcb2380c899be91e46be93662084b3e08c5f21 upstream.
+
+The syntax for the fdt_chosen/initrd
+functions seem to deprecated in usage
+from MIPS bootm implementation.
+
+Third parameter is no more used in these api's
+Refer to : include/fdt_support.h
+
+Signed-off-by: Govindraj Raja <govindraj.raja@imgtec.com>
+---
+ arch/mips/lib/bootm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index e289799c1e..9c647aa428 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -95,10 +95,10 @@ static void boot_setup_fdt(bootm_headers_t *images)
+ 
+ 	debug("## setup FDT\n");
+ 
+-	fdt_chosen(images->ft_addr, 1);
++	fdt_chosen(images->ft_addr);
+ 	fdt_fixup_memory_banks(images->ft_addr, &mem_start, &mem_size, 1);
+ 	fdt_fixup_ethernet(images->ft_addr);
+-	fdt_initrd(images->ft_addr, images->initrd_start, images->initrd_end, 1);
++	fdt_initrd(images->ft_addr, images->initrd_start, images->initrd_end);
+ 
+ #if defined(CONFIG_OF_BOARD_SETUP)
+ 	ft_board_setup(images->ft_addr, gd->bd);
+-- 
+2.11.0
+

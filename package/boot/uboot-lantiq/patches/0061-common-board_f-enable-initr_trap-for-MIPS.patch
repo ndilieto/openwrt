@@ -1,0 +1,54 @@
+From 819eb8067a7a4fd5d9fc3f3b47462f41c2067697 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 26 Aug 2015 16:33:13 +0200
+Subject: [PATCH 061/158] common/board_f: enable initr_trap for MIPS
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ common/board_f.c | 7 +++++++
+ common/board_r.c | 4 ++--
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/common/board_f.c b/common/board_f.c
+index 36bd1f5134..1681fa6097 100644
+--- a/common/board_f.c
++++ b/common/board_f.c
+@@ -617,6 +617,13 @@ static int reserve_stacks(void)
+ 	s = (ulong *) gd->start_addr_sp;
+ 	*s = 0; /* Terminate back chain */
+ 	*++s = 0; /* NULL return address */
++# elif defined(CONFIG_MIPS)
++	/* reserve exception vector */
++	gd->start_addr_sp -= 0x500;
++	gd->start_addr_sp &= ~0xFFF;
++	gd->irq_sp = gd->start_addr_sp;
++	debug("Reserving %zu Bytes for exception vector at: %08lx\n",
++		0x500, gd->start_addr_sp);
+ # endif /* Architecture specific code */
+ 
+ 	return 0;
+diff --git a/common/board_r.c b/common/board_r.c
+index 8e8dad8e9e..9e13345e0c 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -170,7 +170,7 @@ static int initr_serial(void)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_PPC
++#if defined(CONFIG_PPC) || defined(CONFIG_MIPS)
+ static int initr_trap(void)
+ {
+ 	/*
+@@ -746,7 +746,7 @@ init_fnc_t init_sequence_r[] = {
+ 	initr_serial,
+ 	initr_announce,
+ 	INIT_FUNC_WATCHDOG_RESET
+-#ifdef CONFIG_PPC
++#if defined(CONFIG_PPC) || defined(CONFIG_MIPS)
+ 	initr_trap,
+ #endif
+ #ifdef CONFIG_ADDR_MAP
+-- 
+2.11.0
+

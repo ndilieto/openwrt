@@ -1,0 +1,41 @@
+From ad3eead9ce0f78d858384d91248715696c994599 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Tue, 5 Nov 2013 23:49:39 +0100
+Subject: [PATCH 052/158] MIPS: add option to run with caches permanently
+ disabled
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S | 2 +-
+ arch/mips/cpu/mips64/start.S | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index 59468590a9..cf9664a272 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -110,7 +110,7 @@ reset:
+ 	mtc0	zero, CP0_COUNT
+ 	mtc0	zero, CP0_COMPARE
+ 
+-#ifndef CONFIG_SKIP_LOWLEVEL_INIT
++#if !defined(CONFIG_SKIP_LOWLEVEL_INIT) || defined(CONFIG_SYS_DISABLE_CACHE)
+ 	/* CONFIG0 register */
+ 	li	t0, CONF_CM_UNCACHED
+ 	mtc0	t0, CP0_CONFIG
+diff --git a/arch/mips/cpu/mips64/start.S b/arch/mips/cpu/mips64/start.S
+index 81df923bc3..140226b035 100644
+--- a/arch/mips/cpu/mips64/start.S
++++ b/arch/mips/cpu/mips64/start.S
+@@ -99,7 +99,7 @@ reset:
+ 	mtc0	zero, CP0_COUNT
+ 	mtc0	zero, CP0_COMPARE
+ 
+-#ifndef CONFIG_SKIP_LOWLEVEL_INIT
++#if !defined(CONFIG_SKIP_LOWLEVEL_INIT) || defined(CONFIG_SYS_DISABLE_CACHE)
+ 	/* CONFIG0 register */
+ 	dli	t0, CONF_CM_UNCACHED
+ 	mtc0	t0, CP0_CONFIG
+-- 
+2.11.0
+

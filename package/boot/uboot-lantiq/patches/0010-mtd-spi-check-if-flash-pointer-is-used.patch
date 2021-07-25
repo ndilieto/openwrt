@@ -1,0 +1,30 @@
+From 72a6b897d94c8aff4f2d094b5f2125517f68d222 Mon Sep 17 00:00:00 2001
+From: Heiko Schocher <hs@denx.de>
+Date: Mon, 27 Apr 2015 07:42:07 +0200
+Subject: [PATCH 010/158] mtd, spi: check if flash pointer is used
+
+if flash pointer is used free it, before probing a new
+flash and storing it in flash.
+
+Signed-off-by: Heiko Schocher <hs@denx.de>
+---
+ common/cmd_sf.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/common/cmd_sf.c b/common/cmd_sf.c
+index dfdb965792..f2b01f46d2 100644
+--- a/common/cmd_sf.c
++++ b/common/cmd_sf.c
+@@ -121,6 +121,9 @@ static int do_spi_flash_probe(int argc, char * const argv[])
+ 			return -1;
+ 	}
+ 
++	if (flash)
++		spi_flash_free(flash);
++
+ 	new = spi_flash_probe(bus, cs, speed, mode);
+ 	if (!new) {
+ 		printf("Failed to initialize SPI flash at %u:%u\n", bus, cs);
+-- 
+2.11.0
+

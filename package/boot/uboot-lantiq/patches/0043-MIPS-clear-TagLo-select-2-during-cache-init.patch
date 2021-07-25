@@ -1,0 +1,56 @@
+From 61cc32acded7d0c1450ba16b16eb689a49d02fee Mon Sep 17 00:00:00 2001
+From: Paul Burton <paul.burton@imgtec.com>
+Date: Thu, 29 Jan 2015 01:28:03 +0000
+Subject: [PATCH 043/158] MIPS: clear TagLo select 2 during cache init
+
+Commit 8755d50706742e4d302a335f4e69dd6430ec12a2 upstream.
+
+Current MIPS cores from Imagination Technologies use TagLo select 2 for
+the data cache. The architecture requires that it is safe for software
+to write to this register even if it isn't present, so take the trivial
+option of clearing both selects 0 & 2.
+
+Signed-off-by: Paul Burton <paul.burton@imgtec.com>
+Cc: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/cache_init.S | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/lib/cache_init.S b/arch/mips/lib/cache_init.S
+index 04a36b2528..137d7283ff 100644
+--- a/arch/mips/lib/cache_init.S
++++ b/arch/mips/lib/cache_init.S
+@@ -139,6 +139,14 @@ LEAF(mips_cache_reset)
+ #endif /* CONFIG_SYS_MIPS_CACHE_INIT_RAM_LOAD */
+ 
+ 	/*
++	 * The TagLo registers used depend upon the CPU implementation, but the
++	 * architecture requires that it is safe for software to write to both
++	 * TagLo selects 0 & 2 covering supported cases.
++	 */
++	mtc0		zero, CP0_TAGLO
++	mtc0		zero, CP0_TAGLO, 2
++
++	/*
+ 	 * The caches are probably in an indeterminate state, so we force good
+ 	 * parity into them by doing an invalidate for each line. If
+ 	 * CONFIG_SYS_MIPS_CACHE_INIT_RAM_LOAD is set then we'll proceed to
+@@ -151,7 +159,6 @@ LEAF(mips_cache_reset)
+ 	 * Initialize the I-cache first,
+ 	 */
+ 	blez		t2, 1f
+-	mtc0		zero, CP0_TAGLO
+ 	PTR_LI		t0, INDEX_BASE
+ 	PTR_ADDU	t1, t0, t2
+ 	/* clear tag to invalidate */
+@@ -169,7 +176,6 @@ LEAF(mips_cache_reset)
+ 	 * then initialize D-cache.
+ 	 */
+ 1:	blez		t3, 3f
+-	mtc0		zero, CP0_TAGLO
+ 	PTR_LI		t0, INDEX_BASE
+ 	PTR_ADDU	t1, t0, t3
+ 	/* clear all tags */
+-- 
+2.11.0
+

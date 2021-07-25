@@ -1,0 +1,34 @@
+From b712eddc7e484a6eb2230cbdfa6fb242c667199b Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 14 Jan 2015 21:44:13 +0100
+Subject: [PATCH 033/158] MIPS: bootm: add bootstage reporting
+
+Commit e13a50b34bdda624571b4bd49722f38327c02d6a upstream.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/lib/bootm.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/mips/lib/bootm.c b/arch/mips/lib/bootm.c
+index 426f68a990..d9d8396e63 100644
+--- a/arch/mips/lib/bootm.c
++++ b/arch/mips/lib/bootm.c
+@@ -310,8 +310,12 @@ static void boot_jump_linux(bootm_headers_t *images)
+ 	if (mips_boot_malta)
+ 		linux_extra = gd->ram_size;
+ 
+-	/* we assume that the kernel is in place */
+-	printf("\nStarting kernel ...\n\n");
++#ifdef CONFIG_BOOTSTAGE_FDT
++	bootstage_fdt_add_report();
++#endif
++#ifdef CONFIG_BOOTSTAGE_REPORT
++	bootstage_report();
++#endif
+ 
+ 	kernel(linux_argc, (ulong)linux_argv, (ulong)linux_env, linux_extra);
+ }
+-- 
+2.11.0
+

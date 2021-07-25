@@ -1,0 +1,31 @@
+From 34d8663695b879b2833fe32d5e7cbc073ac89652 Mon Sep 17 00:00:00 2001
+From: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Date: Tue, 16 Dec 2014 15:36:33 +0900
+Subject: [PATCH 073/158] mtd: nand: revive "nand scrub" command
+
+Since commit ff94bc40af34 (mtd, ubi, ubifs: resync with Linux-3.14),
+the "nand scrub" command has not been working.
+
+Signed-off-by: Masahiro Yamada <yamada.m@jp.panasonic.com>
+Cc: Scott Wood <scottwood@freescale.com>
+Cc: Heiko Schocher <hs@denx.de>
+---
+ drivers/mtd/nand/nand_base.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index ff69513ee0..21eb162c21 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2908,7 +2908,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		WATCHDOG_RESET();
+ 
+ 		/* Check if we have a bad block, we do not erase bad blocks! */
+-		if (nand_block_checkbad(mtd, ((loff_t) page) <<
++		if (!instr->scrub && nand_block_checkbad(mtd, ((loff_t) page) <<
+ 					chip->page_shift, 0, allowbbt)) {
+ 			pr_warn("%s: attempt to erase a bad block at page 0x%08x\n",
+ 				    __func__, page);
+-- 
+2.11.0
+

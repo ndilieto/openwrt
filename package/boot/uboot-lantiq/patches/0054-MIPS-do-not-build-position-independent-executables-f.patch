@@ -1,0 +1,43 @@
+From 445f3d614a06ff7d137fa45ac408b2a3f5566d3b Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Mon, 24 Aug 2015 14:02:56 +0200
+Subject: [PATCH 054/158] MIPS: do not build position-independent executables
+ for SPL
+
+SPL binaries are usually linked to a fixed address in SRAM. Also
+SPL binaries do not need to relocate itself. Thus do not build them
+as position-independent binaries to largely reduce the binary size.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/config.mk | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/arch/mips/config.mk b/arch/mips/config.mk
+index 67ef5e7797..054cc1e9d2 100644
+--- a/arch/mips/config.mk
++++ b/arch/mips/config.mk
+@@ -49,10 +49,16 @@ __HAVE_ARCH_GENERIC_BOARD := y
+ # On the other hand, we want PIC in the U-Boot code to relocate it from ROM
+ # to RAM. $28 is always used as gp.
+ #
+-PF_ABICALLS			?= -mabicalls
+-PF_PIC				?= -fpic
+-PF_PIE				?= -pie
+-PF_OBJCOPY			?= -j .got -j .u_boot_list -j .rel.dyn -j .padding
++ifdef CONFIG_SPL_BUILD
++PF_ABICALLS			:= -mno-abicalls
++PF_PIC				:= -fno-pic
++PF_PIE				:=
++else
++PF_ABICALLS			:= -mabicalls
++PF_PIC				:= -fpic
++PF_PIE				:= -pie
++PF_OBJCOPY			:= -j .got -j .u_boot_list -j .rel.dyn -j .padding
++endif
+ 
+ PLATFORM_CPPFLAGS		+= -G 0 $(PF_ABICALLS) $(PF_PIC) $(ENDIANNESS)
+ PLATFORM_CPPFLAGS		+= -msoft-float
+-- 
+2.11.0
+

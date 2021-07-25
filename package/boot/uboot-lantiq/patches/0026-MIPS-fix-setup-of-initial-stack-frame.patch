@@ -1,0 +1,93 @@
+From 8781fd5faef7d88f870f2cb15662dc1c921ef717 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Thu, 20 Nov 2014 23:55:32 +0100
+Subject: [PATCH 026/158] MIPS: fix setup of initial stack frame
+
+Commit 6d08e22acad9c5890300e7a9e4d077803709339d upstream.
+
+To get correct stack walking and backtrace functionality in gdb,
+registers fp and ra should be initialized before calling board_init_f
+or board_init_r. Thus allocating stack space and zeroing it as it is
+currently done in board.c becomes obsolete.
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S | 7 +++++--
+ arch/mips/cpu/mips64/start.S | 7 +++++--
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index 68e59b596f..384ea26022 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -136,10 +136,11 @@ reset:
+ 
+ 	/* Set up temporary stack */
+ 	li	sp, CONFIG_SYS_SDRAM_BASE + CONFIG_SYS_INIT_SP_OFFSET
++	move	fp, sp
+ 
+ 	la	t9, board_init_f
+ 	jr	t9
+-	 nop
++	 move	ra, zero
+ 
+ /*
+  * void relocate_code (addr_sp, gd, addr_moni)
+@@ -155,6 +156,7 @@ reset:
+ 	.ent	relocate_code
+ relocate_code:
+ 	move	sp, a0			# set new stack pointer
++	move	fp, sp
+ 
+ 	move	s0, a1			# save gd in s0
+ 	move	s2, a2			# save destination address in s2
+@@ -260,8 +262,9 @@ in_ram:
+ 	 addi	t1, 4
+ 
+ 	move	a0, s0			# a0 <-- gd
++	move	a1, s2
+ 	la	t9, board_init_r
+ 	jr	t9
+-	 move	a1, s2
++	 move	ra, zero
+ 
+ 	.end	relocate_code
+diff --git a/arch/mips/cpu/mips64/start.S b/arch/mips/cpu/mips64/start.S
+index 92954e1c90..6ff714e8ed 100644
+--- a/arch/mips/cpu/mips64/start.S
++++ b/arch/mips/cpu/mips64/start.S
+@@ -130,10 +130,11 @@ reset:
+ 
+ 	/* Set up temporary stack */
+ 	dli	sp, CONFIG_SYS_SDRAM_BASE + CONFIG_SYS_INIT_SP_OFFSET
++	move	fp, sp
+ 
+ 	dla	t9, board_init_f
+ 	jr	t9
+-	 nop
++	 move	ra, zero
+ 
+ /*
+  * void relocate_code (addr_sp, gd, addr_moni)
+@@ -149,6 +150,7 @@ reset:
+ 	.ent	relocate_code
+ relocate_code:
+ 	move	sp, a0			# set new stack pointer
++	move	fp, sp
+ 
+ 	move	s0, a1			# save gd in s0
+ 	move	s2, a2			# save destination address in s2
+@@ -254,8 +256,9 @@ in_ram:
+ 	 daddi	t1, 8
+ 
+ 	move	a0, s0			# a0 <-- gd
++	move	a1, s2
+ 	dla	t9, board_init_r
+ 	jr	t9
+-	 move	a1, s2
++	 move	ra, zero
+ 
+ 	.end	relocate_code
+-- 
+2.11.0
+

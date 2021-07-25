@@ -1,0 +1,142 @@
+From 9ea89b4edd02630cae302ab1b8556ddb40aa37a6 Mon Sep 17 00:00:00 2001
+From: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+Date: Wed, 26 Aug 2015 16:30:49 +0200
+Subject: [PATCH 056/158] MIPS: use ASM macros for _start and relocate_code
+
+Signed-off-by: Daniel Schwierzeck <daniel.schwierzeck@gmail.com>
+---
+ arch/mips/cpu/mips32/start.S | 14 ++++++--------
+ arch/mips/cpu/mips64/start.S | 12 +++++-------
+ arch/mips/include/asm/asm.h  | 10 +++++++++-
+ 3 files changed, 20 insertions(+), 16 deletions(-)
+
+diff --git a/arch/mips/cpu/mips32/start.S b/arch/mips/cpu/mips32/start.S
+index cf9664a272..d207d32506 100644
+--- a/arch/mips/cpu/mips32/start.S
++++ b/arch/mips/cpu/mips32/start.S
+@@ -6,8 +6,8 @@
+  * SPDX-License-Identifier:	GPL-2.0+
+  */
+ 
+-#include <asm-offsets.h>
+ #include <config.h>
++#include <asm/asm.h>
+ #include <asm/regdef.h>
+ #include <asm/mipsregs.h>
+ 
+@@ -38,9 +38,7 @@
+ 
+ 	.set noreorder
+ 
+-	.globl _start
+-	.text
+-_start:
++ENTRY(_start)
+ 	/* U-boot entry point */
+ 	b	reset
+ 	 nop
+@@ -147,6 +145,8 @@ reset:
+ 	jr	t9
+ 	 move	ra, zero
+ 
++	END(_start)
++
+ /*
+  * void relocate_code (addr_sp, gd, addr_moni)
+  *
+@@ -157,9 +157,7 @@ reset:
+  * a1 = gd
+  * a2 = destination address
+  */
+-	.globl	relocate_code
+-	.ent	relocate_code
+-relocate_code:
++ENTRY(relocate_code)
+ 	move	sp, a0			# set new stack pointer
+ 	move	fp, sp
+ 
+@@ -272,4 +270,4 @@ in_ram:
+ 	jr	t9
+ 	 move	ra, zero
+ 
+-	.end	relocate_code
++	END(relocate_code)
+diff --git a/arch/mips/cpu/mips64/start.S b/arch/mips/cpu/mips64/start.S
+index 140226b035..9953840760 100644
+--- a/arch/mips/cpu/mips64/start.S
++++ b/arch/mips/cpu/mips64/start.S
+@@ -46,9 +46,7 @@
+ 
+ 	.set noreorder
+ 
+-	.globl _start
+-	.text
+-_start:
++ENTRY(_start)
+ 	/* U-boot entry point */
+ 	b	reset
+ 	 nop
+@@ -141,6 +139,8 @@ reset:
+ 	jr	t9
+ 	 move	ra, zero
+ 
++	END(_start)
++
+ /*
+  * void relocate_code (addr_sp, gd, addr_moni)
+  *
+@@ -151,9 +151,7 @@ reset:
+  * a1 = gd
+  * a2 = destination address
+  */
+-	.globl	relocate_code
+-	.ent	relocate_code
+-relocate_code:
++ENTRY(relocate_code)
+ 	move	sp, a0			# set new stack pointer
+ 	move	fp, sp
+ 
+@@ -266,4 +264,4 @@ in_ram:
+ 	jr	t9
+ 	 move	ra, zero
+ 
+-	.end	relocate_code
++	END(relocate_code)
+diff --git a/arch/mips/include/asm/asm.h b/arch/mips/include/asm/asm.h
+index 933ccb1b78..229bbf8a2f 100644
+--- a/arch/mips/include/asm/asm.h
++++ b/arch/mips/include/asm/asm.h
+@@ -45,6 +45,12 @@
+ #define CPLOAD(register)
+ #endif
+ 
++#define ENTRY(symbol)                                   \
++		.globl	symbol;                         \
++		.type	symbol, @function;              \
++		.ent	symbol, 0;                      \
++symbol:
++
+ /*
+  * LEAF - declare leaf routine
+  */
+@@ -53,6 +59,7 @@
+ 		.align	2;                              \
+ 		.type	symbol, @function;              \
+ 		.ent	symbol, 0;                      \
++		.section .text.symbol,"x";              \
+ symbol:		.frame	sp, 0, ra
+ 
+ /*
+@@ -62,7 +69,8 @@ symbol:		.frame	sp, 0, ra
+ 		.globl	symbol;                         \
+ 		.align	2;                              \
+ 		.type	symbol, @function;              \
+-		.ent	symbol, 0;                       \
++		.ent	symbol, 0;                      \
++		.section .text.symbol,"x";              \
+ symbol:		.frame	sp, framesize, rpc
+ 
+ /*
+-- 
+2.11.0
+
