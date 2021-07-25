@@ -1,5 +1,5 @@
-src-git packages https://git.openwrt.org/feed/packages.git;openwrt-21.02
-src-git luci https://git.openwrt.org/project/luci.git;openwrt-21.02
-src-git routing https://git.openwrt.org/feed/routing.git;openwrt-21.02
-src-git telephony https://git.openwrt.org/feed/telephony.git;openwrt-21.02
+src-git packages https://github.com/ndilieto/packages.git;openwrt-21.02
+src-git luci https://github.com/ndilieto/luci.git;openwrt-21.02
+src-git routing https://github.com/ndilieto/routing.git;openwrt-21.02
+src-git telephony https://github.com/ndilieto/telephony.git;openwrt-21.02
 #src-link custom /usr/src/openwrt/custom-feed
