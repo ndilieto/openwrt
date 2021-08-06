@@ -1,0 +1,11 @@
+--- a/drivers/pinctrl/pinctrl-xway.c	2021-08-02 21:25:34.756219023 +0200
++++ b/drivers/pinctrl/pinctrl-xway.c	2021-08-02 21:25:48.180219651 +0200
+@@ -542,7 +542,7 @@
+ static const unsigned danube_pins_spi_do[] = {GPIO17};
+ static const unsigned danube_pins_spi_clk[] = {GPIO18};
+ static const unsigned danube_pins_spi_cs1[] = {GPIO15};
+-static const unsigned danube_pins_spi_cs2[] = {GPIO21};
++static const unsigned danube_pins_spi_cs2[] = {GPIO22};
+ static const unsigned danube_pins_spi_cs3[] = {GPIO13};
+ static const unsigned danube_pins_spi_cs4[] = {GPIO10};
+ static const unsigned danube_pins_spi_cs5[] = {GPIO9};
