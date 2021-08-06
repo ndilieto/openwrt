@@ -82,26 +82,24 @@
 
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-
-		gpio = <&gpio 14 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
 	};
 };
 
 &gpio {
-	pinctrl-names = "default";
-	pinctrl-0 = <&state_default>;
-
-	state_default: pinmux {
-		pci_rst {
-			lantiq,pins = "io21";
-			lantiq,pull = <2>;
-			lantiq,output = <1>;
-		};
-		relay {
-			lantiq,pins = "io31";
-			lantiq,output = <1>;
-		};
+	spi_cs1 {
+		gpio-hog;
+		gpios = <15 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+	spi_cs2 {
+		gpio-hog;
+		gpios = <22 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+	dect_en {
+		gpio-hog;
+		gpios = <23 GPIO_ACTIVE_HIGH>;
+		output-low;
 	};
 };
 
@@ -171,6 +169,26 @@
 &usb {
 	status = "okay";
 	vbus-supply = <&usb_vbus>;
+};
+
+&spi {
+	status = "ok";
+	flash@4 {
+		compatible = "jedec,spi-nor";
+		reg = <4>;
+		spi-max-frequency = <20000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				reg = <0x0 0x800000>;
+				label = "spiflash";
+			};
+		};
+	};
 };
 
 &vmmc {

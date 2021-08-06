@@ -182,6 +182,7 @@
 			#gpio-cells = <2>;
 			gpio-controller;
 			reg = <0xe100b10 0xa0>;
+			gpio-ranges = <&gpio 0 0 32>;
 
 			nand_pins: nand {
 				mux-0 {
