@@ -1,0 +1,61 @@
+diff --git a/drivers/usb/dwc2/core.c b/drivers/usb/dwc2/core.c
+index 0939804..a1974ed 100644
+--- a/drivers/usb/dwc2/core.c
++++ b/drivers/usb/dwc2/core.c
+@@ -489,6 +489,31 @@ int dwc2_exit_hibernation(struct dwc2_hsotg *hsotg, int rem_wakeup,
+ }
+ 
+ /*
++ * Do a hard reset of the core.
++ */
++int dwc2_core_hard_reset(struct dwc2_hsotg *hsotg)
++{
++	u32 greset;
++
++	dev_vdbg(hsotg->dev, "%s()\n", __func__);
++
++	/* Core Hard Reset */
++	greset = dwc2_readl(hsotg, GRSTCTL);
++	greset |= GRSTCTL_HSFTRST;
++	dwc2_writel(hsotg, greset, GRSTCTL);
++
++	udelay(1000);
++
++	if (dwc2_hsotg_wait_bit_clear(hsotg, GRSTCTL, GRSTCTL_HSFTRST, 10000)) {
++		dev_warn(hsotg->dev, "%s: HANG! Hard Reset timeout GRSTCTL GRSTCTL_HSFTRST\n",
++			 __func__);
++		return -EBUSY;
++	}
++
++	return 0;
++}
++
++/*
+  * Do core a soft reset of the core.  Be careful with this because it
+  * resets all the internal state machines of the core.
+  */
+diff --git a/drivers/usb/dwc2/core.h b/drivers/usb/dwc2/core.h
+index 9bb2efc..803587f 100644
+--- a/drivers/usb/dwc2/core.h
++++ b/drivers/usb/dwc2/core.h
+@@ -1289,6 +1289,7 @@ static inline bool dwc2_is_hs_iot(struct dwc2_hsotg *hsotg)
+  * The following functions support initialization of the core driver component
+  * and the DWC_otg controller
+  */
++int dwc2_core_hard_reset(struct dwc2_hsotg *hsotg);
+ int dwc2_core_reset(struct dwc2_hsotg *hsotg, bool skip_wait);
+ int dwc2_enter_partial_power_down(struct dwc2_hsotg *hsotg);
+ int dwc2_exit_partial_power_down(struct dwc2_hsotg *hsotg, bool restore);
+diff --git a/drivers/usb/dwc2/platform.c b/drivers/usb/dwc2/platform.c
+index 34bb612..224c397 100644
+--- a/drivers/usb/dwc2/platform.c
++++ b/drivers/usb/dwc2/platform.c
+@@ -445,7 +445,7 @@ static int dwc2_driver_probe(struct platform_device *dev)
+ 	 * Reset before dwc2_get_hwparams() then it could get power-on real
+ 	 * reset value form registers.
+ 	 */
+-	retval = dwc2_core_reset(hsotg, false);
++	retval = dwc2_core_hard_reset(hsotg);
+ 	if (retval)
+ 		goto error;
+ 
