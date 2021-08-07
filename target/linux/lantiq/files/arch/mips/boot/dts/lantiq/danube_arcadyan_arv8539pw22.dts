@@ -131,7 +131,7 @@
 			};
 
 			partition@30000 {
-				label = "uboot";
+				label = "uboot-env";
 				reg = <0x30000 0x10000>;	/* 64 KiB */
 				read-only;
 			};
@@ -190,7 +190,7 @@
 
 			partition@0 {
 				reg = <0x0 0x800000>;
-				label = "spiflash";
+				label = "ubi";
 			};
 		};
 	};
