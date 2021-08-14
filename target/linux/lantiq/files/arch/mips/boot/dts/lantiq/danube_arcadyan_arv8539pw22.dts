@@ -88,6 +88,26 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 	};
+
+	gpio_i2c0: i2c-gpio@0 {
+		compatible = "i2c-gpio";
+		scl-gpios = <&gpio 1 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&gpio 25 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		rtc: rtc@68 {
+			compatible = "maxim,ds3231";
+			reg = <0x68>;
+			#clock-cells = <1>;
+		};
+
+		eeprom: eeprom@57 {
+			compatible = "atmel,24c32";
+			reg = <0x57>;
+			pagesize = <32>;
+		};
+	};
 };
 
 &gpio {
